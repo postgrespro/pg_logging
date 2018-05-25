@@ -1,0 +1,8 @@
+.deps
+*.so
+*.o
+*.pyc
+/results
+regression.diffs
+regression.out
+*.plist
