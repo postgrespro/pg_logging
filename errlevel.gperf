@@ -1,0 +1,23 @@
+%{
+#include <string.h>
+#include "pg_logging.h"
+%}
+%struct-type
+%define slot-name text
+%define lookup-function-name get_errlevel
+struct ErrorLevel;
+%%
+debug5, 10
+debug4, 11
+debug3, 12
+debug2, 13
+debug1, 14
+log, 15
+log_server_only, 16
+info, 17
+notice, 18
+warning, 19
+error, 20
+fatal, 21
+panic, 22
+%%

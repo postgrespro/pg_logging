@@ -34,29 +34,33 @@ static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
 static char *
 add_block(char *data, char *block, int bytes_cp)
 {
+	uint32 endpos = data - hdr->data;
+
 	Assert(bytes_cp < buffer_size);
 
 	if (bytes_cp)
 	{
-		if (bytes_cp < buffer_size - hdr->endpos)
+		if (bytes_cp < buffer_size - endpos)
 		{
-			memcpy(data + hdr->endpos, block, bytes_cp);
-			hdr->endpos += bytes_cp;
-			if (hdr->endpos == buffer_size)
-				hdr->endpos = 0;
+			/* enough place to put */
+			memcpy(data, block, bytes_cp);
+			endpos += bytes_cp;
+			if (endpos == buffer_size)
+				endpos = 0;
 		}
 		else
 		{
-			int size1 = buffer_size - hdr->endpos;
+			/* should add by two parts */
+			int size1 = buffer_size - endpos;
 			int size2 = bytes_cp - size1;
 
-			memcpy(data + hdr->endpos, block, size1);
-			memcpy(data, (char *) block + size1, size2);
-			hdr->endpos = size2;
+			memcpy(data, block, size1);
+			memcpy(hdr->data, (char *) block + size1, size2);
+			endpos = size2;
 		}
 	}
 
-	return hdr->data + hdr->endpos;
+	return hdr->data + endpos;
 }
 
 static void
@@ -64,35 +68,44 @@ copy_error_data_to_shmem(ErrorData *edata)
 {
 	int		hdrlen;
 	char   *data;
-	CollectedItem	*item;
+	CollectedItem	item;
+	uint32	endpos, curpos;
 
-	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-
+	/* calculate length */
 	hdrlen = offsetof(CollectedItem, data);
-	data = hdr->data + hdr->endpos;
-	item = (CollectedItem *) data;
-	data = data + offsetof(CollectedItem, data);
+	item.totallen = hdrlen;
+	item.elevel = edata->elevel;
+	item.saved_errno = edata->saved_errno;
+	item.message_len = safe_strlen(edata->message);
+	item.detail_len = safe_strlen(edata->message);
+	item.hint_len = safe_strlen(edata->hint);
+	item.totallen += (item.message_len + item.detail_len + item.hint_len);
 
-	item->saved_errno = edata->saved_errno;
-	item->message_len = safe_strlen(edata->message);
-	item->detail_len = safe_strlen(edata->message);
-	item->hint_len = safe_strlen(edata->hint);
+	/*
+	 * Find the place to put the block.
+	 * First  check the header, it there is not enough place for the header
+	 * move to the beginning.
+	 * Then check the place with the data and calculate the position
+	 * according to data length.
+	 */
+	do {
+		curpos = pg_atomic_read_u32(&hdr->endpos);
+		if (curpos + hdrlen > buffer_size)
+			curpos = 0;
 
-	/* copy blocks of data */
-	item->totallen = hdrlen + item->message_len +
-		item->detail_len + item->hint_len;
-	data = add_block(data, edata->message, item->message_len);
-	data = add_block(data, edata->detail, item->detail_len);
-	data = add_block(data, edata->hint, item->hint_len);
+		endpos = curpos + item.totallen;
+		if (endpos >= buffer_size)
+			endpos = endpos - buffer_size;
+	} while (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos));
 
-	/* if there is not enough place for new header, to just move to start */
-	if (data + hdrlen >= hdr->data + buffer_size)
-	{
-		item->totallen += (hdr->data + buffer_size) - data;
-		hdr->endpos = 0;
-	}
+	data = (char *) INTALIGN(hdr->data + curpos);
+	Assert(data < (hdr->data + buffer_size));
+	memcpy(data, &item, hdrlen);
+	data += hdrlen;
 
-	LWLockRelease(&hdr->hdr_lock);
+	data = add_block(data, edata->message, item.message_len);
+	data = add_block(data, edata->detail, item.detail_len);
+	data = add_block(data, edata->hint, item.hint_len);
 }
 
 static void
@@ -136,7 +149,7 @@ pg_logging_shmem_hook(void)
 
 		hdr = shm_toc_allocate(toc, sizeof(LoggingShmemHdr));
 		hdr->buffer_size = buffer_size;
-		hdr->endpos = 0;
+		pg_atomic_init_u32(&hdr->endpos, 0);
 
 		/* initialize buffer lwlock */
 		LWLockRegisterTranche(tranche_id, "pg_logging tranche");
