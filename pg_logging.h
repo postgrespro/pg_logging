@@ -10,7 +10,7 @@
 typedef struct CollectedItem
 {
 	int			totallen;		/* size of this block */
-	int			saved_errno;	/* errno at entry */
+	int			saved_errno;			/* errno at entry */
 	char		elevel;			/* error level */
 
 	/* text offsets in data block */
@@ -37,5 +37,17 @@ struct ErrorLevel {
 };
 
 #define	PG_LOGGING_MAGIC	0xAABBCCDD
+
+// views
+#define Natts_pg_logging_data	5
+#define Anum_pg_logging_level	1
+#define Anum_pg_logging_errno	2
+#define Anum_pg_logging_message	3
+#define Anum_pg_logging_detail	4
+#define Anum_pg_logging_hint	5
+
+struct ErrorLevel *get_errlevel (register const char *str, register size_t len);
+extern struct ErrorLevel errlevel_wordlist[];
+extern LoggingShmemHdr	*hdr;
 
 #endif

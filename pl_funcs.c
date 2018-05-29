@@ -7,6 +7,8 @@
 #include "postgres.h"
 #include "catalog/pg_type_d.h"
 #include "funcapi.h"
+#include "utils/builtins.h"
+#include "access/htup_details.h"
 
 #include "pg_logging.h"
 
@@ -15,12 +17,10 @@ PG_FUNCTION_INFO_V1( errlevel_in );
 PG_FUNCTION_INFO_V1( errlevel_out );
 PG_FUNCTION_INFO_V1( errlevel_eq );
 
-struct ErrorLevel *get_errlevel (register const char *str, register size_t len);
-extern struct ErrorLevel errlevel_wordlist[];
-extern LoggingShmemHdr	*hdr;
-
 typedef struct {
 	uint32		until;
+	uint32		readpos;
+	bool		wraparound;
 } logged_data_ctx;
 
 Datum
@@ -30,9 +30,6 @@ get_logged_data(PG_FUNCTION_ARGS)
 	FuncCallContext	   *funccxt;
 	logged_data_ctx	   *usercxt;
 
-	/* reader will block readers */
-	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
@@ -41,21 +38,25 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 		old_mcxt = MemoryContextSwitchTo(funccxt->multi_call_memory_ctx);
 
+		/* reader will block other readers */
+		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = pg_atomic_read_u32(&hdr->endpos);
+		usercxt->readpos = hdr->readpos;
+		usercxt->wraparound = usercxt->until <= hdr->readpos;
 
 		/* Create tuple descriptor */
-		tupdesc = CreateTemplateTupleDesc(4, false);
+		tupdesc = CreateTemplateTupleDesc(Natts_pg_logging_data, false);
 
-		TupleDescInitEntry(tupdesc, 1,
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_level,
 						   "level", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, 2,
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_errno,
 						   "errno", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, 3,
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_message,
 						   "message", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, 4,
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_detail,
 						   "detail", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, 4,
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_hint,
 						   "hint", TEXTOID, -1, 0);
 
 		funccxt->tuple_desc = BlessTupleDesc(tupdesc);
@@ -69,28 +70,70 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 	pg_read_barrier();
 
-	if (hdr->readpos < usercxt->until)
+	if ((!usercxt->wraparound && hdr->readpos < usercxt->until) ||
+			(usercxt->wraparound && hdr->readpos > usercxt->until))
 	{
-		CollectedItem	*item;
-		char			*data;
+		CollectedItem  *item;
+		char		   *data;
+		HeapTuple		htup;
+		Datum					values[Natts_pg_logging_data];
+		bool					isnull[Natts_pg_logging_data];
 
-		data = hdr->data + INTALIGN(hdr->readpos);
+		MemSet(values, 0, sizeof(values));
+		MemSet(isnull, 0, sizeof(isnull));
+
+		data = (char *) INTALIGN(hdr->data + hdr->readpos);
 		item = (CollectedItem *) data;
 		hdr->readpos += item->totallen;
+		if (hdr->readpos >= hdr->buffer_size)
+		{
+			usercxt->wraparound = false;
+			hdr->readpos = 0;
+		}
+
+		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
+		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
+
+		data = item->data;
+		values[Anum_pg_logging_message - 1]	=
+				CStringGetTextDatum(pstrdup(data));
+		data += item->message_len;
+		if (item->detail_len)
+		{
+			values[Anum_pg_logging_detail - 1]	=
+					CStringGetTextDatum(pstrdup(data));
+			data += item->detail_len;
+		}
+		else isnull[Anum_pg_logging_detail] = true;
+
+		if (item->hint_len)
+		{
+			values[Anum_pg_logging_hint - 1]	=
+					CStringGetTextDatum(pstrdup(data));
+			data += item->hint_len;
+		}
+		else isnull[Anum_pg_logging_hint] = true;
+
+		/* Form output tuple */
+		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);
+
+		SRF_RETURN_NEXT(funccxt, HeapTupleGetDatum(htup));
 	}
+
 	LWLockRelease(&hdr->hdr_lock);
+	SRF_RETURN_DONE(funccxt);
 }
 
 Datum
 errlevel_out(PG_FUNCTION_ARGS)
 {
 	int		i;
-	int		code = PG_GETARG_INT32(0);
+	char	code = PG_GETARG_CHAR(0);
 
-	for (i = 0; i < sizeof(13); i++)
+	for (i = 0; i <= 21 /* MAX_HASH_VALUE */; i++)
 	{
 		struct ErrorLevel	*el = &errlevel_wordlist[i];
-		if (el->code == code)
+		if (el->text != NULL && el->code == code)
 			PG_RETURN_CSTRING(pstrdup(el->text));
 	}
 
@@ -111,5 +154,5 @@ errlevel_in(PG_FUNCTION_ARGS)
 	if (!el)
 		elog(ERROR, "Unknown level name: %s", str);
 
-	PG_RETURN_INT32(el->code);
+	PG_RETURN_CHAR(el->code);
 }

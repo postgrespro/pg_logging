@@ -1,5 +1,5 @@
 /* ANSI-C code produced by gperf version 3.1 */
-/* Command-line: gperf --global-table --output-file=errlevel.c --word-array-name=errlevel_wordlist errlevel.gperf  */
+/* Command-line: gperf --null-strings --global-table --output-file=errlevel.c --word-array-name=errlevel_wordlist errlevel.gperf  */
 /* Computed positions: -k'$' */
 
 #if !((' ' == 32) && ('!' == 33) && ('"' == 34) && ('#' == 35) \
@@ -87,7 +87,7 @@ hash (register const char *str, register size_t len)
 
 struct ErrorLevel errlevel_wordlist[] =
   {
-    {""}, {""}, {""},
+    {(char*)0}, {(char*)0}, {(char*)0},
 #line 15 "errlevel.gperf"
     {"log", 15},
 #line 17 "errlevel.gperf"
@@ -98,21 +98,21 @@ struct ErrorLevel errlevel_wordlist[] =
     {"notice", 18},
 #line 19 "errlevel.gperf"
     {"warning", 19},
-    {""},
+    {(char*)0},
 #line 13 "errlevel.gperf"
     {"debug2", 13},
 #line 21 "errlevel.gperf"
     {"fatal", 21},
 #line 10 "errlevel.gperf"
     {"debug5", 10},
-    {""}, {""},
+    {(char*)0}, {(char*)0},
 #line 14 "errlevel.gperf"
     {"debug1", 14},
 #line 16 "errlevel.gperf"
     {"log_server_only", 16},
 #line 11 "errlevel.gperf"
     {"debug4", 11},
-    {""}, {""}, {""},
+    {(char*)0}, {(char*)0}, {(char*)0},
 #line 22 "errlevel.gperf"
     {"panic", 22},
 #line 12 "errlevel.gperf"
@@ -130,7 +130,7 @@ get_errlevel (register const char *str, register size_t len)
         {
           register const char *s = errlevel_wordlist[key].text;
 
-          if (*str == *s && !strcmp (str + 1, s + 1))
+          if (s && *str == *s && !strcmp (str + 1, s + 1))
             return &errlevel_wordlist[key];
         }
     }
