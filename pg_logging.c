@@ -98,7 +98,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		{
 			paddingpos = curpos;
 			curpos = 0;
-		}
+		} else paddingpos = 0;
 
 		endpos = curpos + totallen;
 		if (endpos >= hdr->buffer_size)

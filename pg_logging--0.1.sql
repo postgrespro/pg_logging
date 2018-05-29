@@ -12,10 +12,12 @@ language c strict immutable parallel safe;
 create type error_level (
 	input = errlevel_in,
 	output = errlevel_out,
-	internallength = 1,
+	internallength = 4,
     passedbyvalue,
-    alignment = "char"
+    alignment = int
 );
+
+create cast (int AS error_level) without function as assignment;
 
 create type log_item as (
 	level		int,
@@ -33,5 +35,6 @@ language c;
 
 /* create view to simplify usage of get_log function */
 create view pg_log as
-	select *
+	select
+		level::error_level, errno, message, detail, hint
 	from get_log(true);

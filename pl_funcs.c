@@ -23,6 +23,19 @@ typedef struct {
 	bool		wraparound;
 } logged_data_ctx;
 
+static char *
+get_errlevel_name(int code)
+{
+	int i;
+	for (i = 0; i <= 21 /* MAX_HASH_VALUE */; i++)
+	{
+		struct ErrorLevel	*el = &errlevel_wordlist[i];
+		if (el->text != NULL && el->code == code)
+			return el->text;
+	}
+	elog(ERROR, "Invalid error level name");
+}
+
 Datum
 get_logged_data(PG_FUNCTION_ARGS)
 {
@@ -91,7 +104,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 			hdr->readpos = 0;
 		}
 
-		values[Anum_pg_logging_level - 1] = Int32GetDatum((char) item->elevel);
+		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
 
 		data = item->data;
@@ -126,17 +139,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 Datum
 errlevel_out(PG_FUNCTION_ARGS)
 {
-	int		i;
-	char	code = PG_GETARG_CHAR(0);
-
-	for (i = 0; i <= 21 /* MAX_HASH_VALUE */; i++)
-	{
-		struct ErrorLevel	*el = &errlevel_wordlist[i];
-		if (el->text != NULL && el->code == code)
-			PG_RETURN_CSTRING(pstrdup(el->text));
-	}
-
-	elog(ERROR, "Invalid error level name");
+	PG_RETURN_CSTRING(get_errlevel_name(PG_GETARG_INT32(0)));
 }
 
 Datum
@@ -153,5 +156,5 @@ errlevel_in(PG_FUNCTION_ARGS)
 	if (!el)
 		elog(ERROR, "Unknown level name: %s", str);
 
-	PG_RETURN_CHAR(el->code);
+	PG_RETURN_INT32(el->code);
 }

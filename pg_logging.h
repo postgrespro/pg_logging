@@ -33,7 +33,7 @@ typedef struct LoggingShmemHdr
 
 struct ErrorLevel {
 	char   *text;
-	char	code;
+	int		code;
 };
 
 #define	PG_LOGGING_MAGIC	0xAABBCCDD
