@@ -72,6 +72,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 	char   *data;
 	CollectedItem	item;
 	uint32	endpos, curpos, savedpos;
+	uint32	paddingpos = 0;
 
 	/* calculate length */
 	hdrlen = offsetof(CollectedItem, data);
@@ -95,7 +96,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		totallen = item.totallen;
 		if (curpos + hdrlen > hdr->buffer_size)
 		{
-			totallen += hdr->buffer_size - (curpos - hdrlen);
+			paddingpos = curpos;
 			curpos = 0;
 		}
 
@@ -104,6 +105,13 @@ copy_error_data_to_shmem(ErrorData *edata)
 			endpos = endpos - hdr->buffer_size;
 		savedpos = curpos;
 	} while (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos));
+
+	/* just mark that there's nothing at the end */
+	if (paddingpos)
+	{
+		CollectedItem	*item = (CollectedItem *) (hdr->data + paddingpos);
+		item->totallen = 0;
+	}
 
 	curpos = savedpos;
 	item.totallen = totallen;
@@ -124,7 +132,7 @@ pg_logging_log_hook(ErrorData *edata)
 	if (pg_logging_log_hook_next)
 		pg_logging_log_hook_next(edata);
 
-	if (shmem_initialized)
+	if (shmem_initialized && !proc_exit_inprogress)
 		copy_error_data_to_shmem(edata);
 }
 

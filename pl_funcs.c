@@ -85,7 +85,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		data = (char *) INTALIGN(hdr->data + hdr->readpos);
 		item = (CollectedItem *) data;
 		hdr->readpos += item->totallen;
-		if (hdr->readpos >= hdr->buffer_size)
+		if (item->totallen == 0 || hdr->readpos >= hdr->buffer_size)
 		{
 			usercxt->wraparound = false;
 			hdr->readpos = 0;
