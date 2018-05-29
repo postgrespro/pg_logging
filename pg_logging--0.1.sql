@@ -1,11 +1,4 @@
-create or replace function get_log(
-	flush	bool
-)
-returns text as 'MODULE_PATHNAME', 'get_logged_data'
-language c;
-
-create view pg_log as select * from get_log(true);
-
+/* create special type for error levels */
 create type error_level;
 
 create or replace function errlevel_out(error_level)
@@ -21,5 +14,24 @@ create type error_level (
 	output = errlevel_out,
 	internallength = 1,
     passedbyvalue,
-    alignment = char
+    alignment = "char"
 );
+
+create type log_item as (
+	level		int,
+	errno		int,
+	message		text,
+	detail		text,
+	hint		text
+);
+
+create or replace function get_log(
+	flush	bool
+)
+returns log_item as 'MODULE_PATHNAME', 'get_logged_data'
+language c;
+
+/* create view to simplify usage of get_log function */
+create view pg_log as
+	select *
+	from get_log(true);

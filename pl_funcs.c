@@ -43,7 +43,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = pg_atomic_read_u32(&hdr->endpos);
 		usercxt->readpos = hdr->readpos;
-		usercxt->wraparound = usercxt->until <= hdr->readpos;
+		usercxt->wraparound = usercxt->until < hdr->readpos;
 
 		/* Create tuple descriptor */
 		tupdesc = CreateTemplateTupleDesc(Natts_pg_logging_data, false);
@@ -91,12 +91,11 @@ get_logged_data(PG_FUNCTION_ARGS)
 			hdr->readpos = 0;
 		}
 
-		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
+		values[Anum_pg_logging_level - 1] = Int32GetDatum((char) item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
 
 		data = item->data;
-		values[Anum_pg_logging_message - 1]	=
-				CStringGetTextDatum(pstrdup(data));
+		values[Anum_pg_logging_message - 1]	= CStringGetTextDatum(pstrdup(data));
 		data += item->message_len;
 		if (item->detail_len)
 		{
@@ -104,7 +103,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 					CStringGetTextDatum(pstrdup(data));
 			data += item->detail_len;
 		}
-		else isnull[Anum_pg_logging_detail] = true;
+		else isnull[Anum_pg_logging_detail - 1] = true;
 
 		if (item->hint_len)
 		{
@@ -112,7 +111,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 					CStringGetTextDatum(pstrdup(data));
 			data += item->hint_len;
 		}
-		else isnull[Anum_pg_logging_hint] = true;
+		else isnull[Anum_pg_logging_hint - 1] = true;
 
 		/* Form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);

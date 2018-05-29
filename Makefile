@@ -20,5 +20,3 @@ errlevel.c: errlevel.gperf
 	gperf errlevel.gperf --null-strings --global-table --output-file=errlevel.c --word-array-name=errlevel_wordlist
 	sed -i.bak -e 's/static struct ErrorLevel errlevel_wordlist/struct ErrorLevel errlevel_wordlist/g' errlevel.c
 	rm errlevel.c.bak
-
-all: errlevel.c
