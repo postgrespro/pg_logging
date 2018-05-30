@@ -34,6 +34,10 @@ create or replace function get_log(
 returns log_item as 'MODULE_PATHNAME', 'get_logged_data'
 language c;
 
+create or replace function flush_log()
+returns void as 'MODULE_PATHNAME', 'flush_logged_data'
+language c;
+
 /* create view to simplify usage of get_log function */
 create view pg_log as
 	select

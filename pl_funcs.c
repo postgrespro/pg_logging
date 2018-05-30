@@ -13,6 +13,7 @@
 #include "pg_logging.h"
 
 PG_FUNCTION_INFO_V1( get_logged_data );
+PG_FUNCTION_INFO_V1( flush_logged_data );
 PG_FUNCTION_INFO_V1( errlevel_in );
 PG_FUNCTION_INFO_V1( errlevel_out );
 PG_FUNCTION_INFO_V1( errlevel_eq );
@@ -36,6 +37,29 @@ get_errlevel_name(int code)
 	elog(ERROR, "Invalid error level name");
 }
 
+void
+reset_counters_in_shmem(void)
+{
+	uint32 curpos = pg_atomic_read_u32(&hdr->endpos);
+
+	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+	while (true)
+	{
+		if (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, 0))
+			break;
+	}
+
+	hdr->readpos = 0;
+	LWLockRelease(&hdr->hdr_lock);
+}
+
+Datum
+flush_logged_data(PG_FUNCTION_ARGS)
+{
+	reset_counters_in_shmem();
+	PG_RETURN_VOID();
+}
+
 Datum
 get_logged_data(PG_FUNCTION_ARGS)
 {
@@ -51,7 +75,10 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 		old_mcxt = MemoryContextSwitchTo(funccxt->multi_call_memory_ctx);
 
-		/* reader will block other readers */
+		/*
+		 * Reader will block only other readers if it's fast enough.
+		 * Writer could take this lock if readpos wasn't changed.
+		 */
 		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = pg_atomic_read_u32(&hdr->endpos);
@@ -140,26 +167,25 @@ get_logged_data(PG_FUNCTION_ARGS)
 		values[Anum_pg_logging_position - 1] = Int32GetDatum(curpos);
 
 		data = item->data;
-		values[Anum_pg_logging_message - 1]	= CStringGetTextDatum(pstrdup(data));
+		values[Anum_pg_logging_message - 1]	= CStringGetTextDatum(data);
 		data += item->message_len;
 		if (item->detail_len)
 		{
-			values[Anum_pg_logging_detail - 1]	=
-					CStringGetTextDatum(pstrdup(data));
+			values[Anum_pg_logging_detail - 1] = CStringGetTextDatum(data);
 			data += item->detail_len;
 		}
 		else isnull[Anum_pg_logging_detail - 1] = true;
 
 		if (item->hint_len)
 		{
-			values[Anum_pg_logging_hint - 1]	=
-					CStringGetTextDatum(pstrdup(data));
+			values[Anum_pg_logging_hint - 1] = CStringGetTextDatum(data);
 			data += item->hint_len;
 		}
 		else isnull[Anum_pg_logging_hint - 1] = true;
 
 		/* Form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);
+		pfree(item);
 
 		SRF_RETURN_NEXT(funccxt, HeapTupleGetDatum(htup));
 	}

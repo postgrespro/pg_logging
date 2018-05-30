@@ -49,8 +49,10 @@ struct ErrorLevel {
 #define Anum_pg_logging_hint		5
 #define Anum_pg_logging_position	6
 
-struct ErrorLevel *get_errlevel (register const char *str, register size_t len);
 extern struct ErrorLevel errlevel_wordlist[];
 extern LoggingShmemHdr	*hdr;
+
+void reset_counters_in_shmem(void);
+struct ErrorLevel *get_errlevel (register const char *str, register size_t len);
 
 #endif

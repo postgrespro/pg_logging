@@ -1,0 +1,50 @@
+create schema logging;
+create extension pg_logging schema logging;
+set pg_logging.buffer_position = 0;
+ERROR:  this parameter could not be changed
+set pg_logging.buffer_size = 2000;
+ERROR:  buffer size cannot be increased
+set pg_logging.buffer_size = 1;
+show pg_logging.buffer_position;
+ pg_logging.buffer_position 
+----------------------------
+ 0
+(1 row)
+
+select logging.flush_log();
+ flush_log 
+-----------
+ 
+(1 row)
+
+select * from logging.pg_log;
+ level | errno | message | detail | hint 
+-------+-------+---------+--------+------
+       |       |         |        | 
+(1 row)
+
+select 1/0;
+ERROR:  division by zero
+show pg_logging.buffer_position;
+ pg_logging.buffer_position 
+----------------------------
+ 44
+(1 row)
+
+select 'aaaaa'::int;
+ERROR:  invalid input syntax for integer: "aaaaa"
+LINE 1: select 'aaaaa'::int;
+               ^
+show pg_logging.buffer_position;
+ pg_logging.buffer_position 
+----------------------------
+ 112
+(1 row)
+
+select * from logging.get_log(true);
+ level | errno |                  message                  | detail | hint | position 
+-------+-------+-------------------------------------------+--------+------+----------
+    20 |     0 | division by zero                          |        |      |        0
+    20 |     0 | invalid input syntax for integer: "aaaaa" |        |      |       44
+(2 rows)
+

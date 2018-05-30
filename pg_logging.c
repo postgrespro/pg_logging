@@ -13,6 +13,7 @@
 #include "storage/ipc.h"
 #include "string.h"
 #include "utils/guc.h"
+#include "utils/builtins.h"
 
 #include "pg_logging.h"
 
@@ -23,6 +24,7 @@ void		_PG_fini(void);
 
 /* global variables */
 int						buffer_size_setting = 0;
+int						buffer_position = 0;	/* just mock */
 shm_toc				   *toc = NULL;
 LoggingShmemHdr		   *hdr = NULL;
 bool					shmem_initialized = false;
@@ -33,18 +35,62 @@ static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
 #define safe_strlen(s) ((s) ? strlen(s) + 1 : 0)
 
 static void
+buffer_size_assign_hook(int newval, void *extra)
+{
+	if (!shmem_initialized)
+		return;
+
+	newval = newval * 1024;
+	if (newval > hdr->buffer_size)
+		elog(ERROR, "buffer size cannot be increased");
+
+	reset_counters_in_shmem();
+	hdr->buffer_size = newval;
+}
+
+static bool
+buffer_position_check_hook(int *newval, void **extra, GucSource source)
+{
+	if (shmem_initialized)
+		elog(ERROR, "this parameter could not be changed");
+	return true;
+}
+
+static const char *
+buffer_position_show_hook(void)
+{
+	char *s = palloc0(20);
+
+	buffer_position = pg_atomic_read_u32(&hdr->endpos);
+	pg_ltoa(buffer_position, s);
+	return s;
+}
+
+static void
 setup_gucs(void)
 {
 	DefineCustomIntVariable(
 		"pg_logging.buffer_size",
 		"Sets size of the ring buffer used to keep logs", NULL,
 		&buffer_size_setting,
-		1,//1024 /* 1MB */,
+		1024 /* 1MB */,
 		1,
 		512 * 1024,	/* 512MB should be enough for everyone */
 		PGC_SUSET,
 		GUC_UNIT_KB,
-		NULL, NULL, NULL
+		NULL, buffer_size_assign_hook, NULL
+	);
+
+	DefineCustomIntVariable(
+		"pg_logging.buffer_position",
+		"Used to check current position in the buffer", NULL,
+		&buffer_position,
+		0,
+		0,
+		INT_MAX,	/* 512MB should be enough for everyone */
+		PGC_SUSET,
+		GUC_UNIT_BYTE,
+		buffer_position_check_hook, NULL, buffer_position_show_hook
 	);
 }
 
@@ -104,7 +150,8 @@ copy_error_data_to_shmem(ErrorData *edata)
 	 * according to data length.
 	 */
 	curpos = pg_atomic_read_u32(&hdr->endpos);
-	do {
+	while (true)
+	{
 		bool	wrap = false;
 		if (curpos + ITEM_HDR_LEN > hdr->buffer_size)
 		{
@@ -133,7 +180,9 @@ copy_error_data_to_shmem(ErrorData *edata)
 		}
 
 		savedpos = curpos;
-	} while (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos));
+		if (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos))
+			break;
+	}
 
 	curpos = savedpos;
 	fprintf(stderr, "%d, %d\n", curpos, item.totallen);

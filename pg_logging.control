@@ -1,3 +1,4 @@
 comment = 'PostgreSQL logging interface'
 default_version = '0.1'
 module_pathname = '$libdir/pg_logging'
+relocatable = true
