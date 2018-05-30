@@ -32,6 +32,22 @@ static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
 
 #define safe_strlen(s) ((s) ? strlen(s) + 1 : 0)
 
+static void
+setup_gucs(void)
+{
+	DefineCustomIntVariable(
+		"pg_logging.buffer_size",
+		"Sets size of the ring buffer used to keep logs", NULL,
+		&buffer_size_setting,
+		1,//1024 /* 1MB */,
+		1,
+		512 * 1024,	/* 512MB should be enough for everyone */
+		PGC_SUSET,
+		GUC_UNIT_KB,
+		NULL, NULL, NULL
+	);
+}
+
 static char *
 add_block(char *data, char *block, int bytes_cp)
 {
@@ -67,16 +83,12 @@ add_block(char *data, char *block, int bytes_cp)
 static void
 copy_error_data_to_shmem(ErrorData *edata)
 {
-	int		hdrlen,
-			totallen;
 	char   *data;
 	CollectedItem	item;
 	uint32	endpos, curpos, savedpos;
-	uint32	paddingpos = 0;
 
 	/* calculate length */
-	hdrlen = offsetof(CollectedItem, data);
-	item.totallen = hdrlen;
+	item.totallen = ITEM_HDR_LEN;
 	item.elevel = edata->elevel;
 	item.saved_errno = edata->saved_errno;
 	item.message_len = safe_strlen(edata->message);
@@ -93,33 +105,42 @@ copy_error_data_to_shmem(ErrorData *edata)
 	 */
 	curpos = pg_atomic_read_u32(&hdr->endpos);
 	do {
-		totallen = item.totallen;
-		if (curpos + hdrlen > hdr->buffer_size)
+		bool	wrap = false;
+		if (curpos + ITEM_HDR_LEN > hdr->buffer_size)
 		{
-			paddingpos = curpos;
+			fprintf(stderr, "skipping the end, curpos, %d, header: %ld, skipped: %d\n",
+					curpos, ITEM_HDR_LEN, hdr->buffer_size - curpos);
 			curpos = 0;
-		} else paddingpos = 0;
+			wrap = true;
+		}
 
-		endpos = curpos + totallen;
+		endpos = curpos + item.totallen;
 		if (endpos >= hdr->buffer_size)
+		{
 			endpos = endpos - hdr->buffer_size;
+			wrap = true;
+		}
+
+		if (wrap)
+		{
+			LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+			while (hdr->readpos < endpos)
+			{
+				CollectedItem *item = (CollectedItem *) (hdr->data + hdr->readpos);
+				hdr->readpos += item->totallen;
+			}
+			LWLockRelease(&hdr->hdr_lock);
+		}
+
 		savedpos = curpos;
 	} while (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos));
 
-	/* just mark that there's nothing at the end */
-	if (paddingpos)
-	{
-		CollectedItem	*item = (CollectedItem *) (hdr->data + paddingpos);
-		item->totallen = 0;
-	}
-
 	curpos = savedpos;
-	item.totallen = totallen;
 	fprintf(stderr, "%d, %d\n", curpos, item.totallen);
 	data = hdr->data + curpos;
 	Assert(data < (hdr->data + hdr->buffer_size));
-	memcpy(data, &item, hdrlen);
-	data += hdrlen;
+	memcpy(data, &item, ITEM_HDR_LEN);
+	data += ITEM_HDR_LEN;
 
 	data = add_block(data, edata->message, item.message_len);
 	data = add_block(data, edata->detail, item.detail_len);
@@ -156,7 +177,7 @@ static void
 pg_logging_shmem_hook(void)
 {
 	bool	found;
-	Size	bufsize = INTALIGN(buffer_size_setting);
+	Size	bufsize = INTALIGN(buffer_size_setting * 1024);
 	Size	segsize = pg_logging_shmem_size(bufsize);
 	void   *addr;
 
@@ -197,22 +218,6 @@ pg_logging_shmem_hook(void)
 		pg_logging_shmem_hook_next();
 
 	elog(LOG, "pg_logging initialized");
-}
-
-static void
-setup_gucs(void)
-{
-	DefineCustomIntVariable(
-		"pg_logging.buffer_size",
-		"Sets size of the ring buffer used to keep logs", NULL,
-		&buffer_size_setting,
-		1024 /* 1MB */,
-		100,
-		512 * 1024,	/* 512MB should be enough for everyone */
-		PGC_SUSET,
-		GUC_UNIT_KB,
-		NULL, NULL, NULL
-	);
 }
 
 /*

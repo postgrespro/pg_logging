@@ -24,11 +24,12 @@ create type log_item as (
 	errno		int,
 	message		text,
 	detail		text,
-	hint		text
+	hint		text,
+	position	int
 );
 
 create or replace function get_log(
-	flush	bool
+	flush	bool	/* always true for now */
 )
 returns log_item as 'MODULE_PATHNAME', 'get_logged_data'
 language c;

@@ -19,7 +19,7 @@ PG_FUNCTION_INFO_V1( errlevel_eq );
 
 typedef struct {
 	uint32		until;
-	uint32		readpos;
+	uint32		startpos;
 	bool		wraparound;
 } logged_data_ctx;
 
@@ -55,7 +55,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = pg_atomic_read_u32(&hdr->endpos);
-		usercxt->readpos = hdr->readpos;
+		usercxt->startpos = hdr->readpos;
 		usercxt->wraparound = usercxt->until < hdr->readpos;
 
 		/* Create tuple descriptor */
@@ -71,6 +71,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 						   "detail", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_hint,
 						   "hint", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_position,
+						   "position", INT4OID, -1, 0);
 
 		funccxt->tuple_desc = BlessTupleDesc(tupdesc);
 		funccxt->user_fctx = (void *) usercxt;
@@ -83,29 +85,59 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 	pg_read_barrier();
 
-	if ((!usercxt->wraparound && hdr->readpos < usercxt->until) ||
+	while ((!usercxt->wraparound && hdr->readpos < usercxt->until) ||
 			(usercxt->wraparound && hdr->readpos > usercxt->until))
 	{
 		CollectedItem  *item;
 		char		   *data;
 		HeapTuple		htup;
-		Datum					values[Natts_pg_logging_data];
-		bool					isnull[Natts_pg_logging_data];
+		Datum			values[Natts_pg_logging_data];
+		bool			isnull[Natts_pg_logging_data];
+		int				curpos;
+
+		if (hdr->readpos + ITEM_HDR_LEN > hdr->buffer_size)
+		{
+			hdr->readpos = 0;
+			usercxt->wraparound = false;
+			continue;
+		}
+
+		curpos = hdr->readpos;
+		data = (char *) (hdr->data + hdr->readpos);
+		AssertPointerAlignment(data, 4);
+
+		/*
+		 * careful here, we point to the buffer first, then allocate a
+		 * block using information from buffer
+		 */
+		item = (CollectedItem *) data;
+		item = (CollectedItem *) palloc0(item->totallen);
+		memcpy(item, data, offsetof(CollectedItem, data));
+		data += ITEM_HDR_LEN;
+
+		if (hdr->readpos + item->totallen >= hdr->buffer_size)
+		{
+			/* two parts */
+			int	taillen = hdr->buffer_size - hdr->readpos - ITEM_HDR_LEN;
+			memcpy(item->data, data, taillen);
+			usercxt->wraparound = false;
+			hdr->readpos += item->totallen;
+			hdr->readpos = hdr->readpos - hdr->buffer_size;
+			memcpy(item->data + taillen, hdr->data, hdr->readpos);
+		}
+		else
+		{
+			/* one part */
+			memcpy(item->data, data, item->totallen - ITEM_HDR_LEN);
+			hdr->readpos += item->totallen;
+		}
 
 		MemSet(values, 0, sizeof(values));
 		MemSet(isnull, 0, sizeof(isnull));
 
-		data = (char *) INTALIGN(hdr->data + hdr->readpos);
-		item = (CollectedItem *) data;
-		hdr->readpos += item->totallen;
-		if (item->totallen == 0 || hdr->readpos >= hdr->buffer_size)
-		{
-			usercxt->wraparound = false;
-			hdr->readpos = 0;
-		}
-
 		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
+		values[Anum_pg_logging_position - 1] = Int32GetDatum(curpos);
 
 		data = item->data;
 		values[Anum_pg_logging_message - 1]	= CStringGetTextDatum(pstrdup(data));
