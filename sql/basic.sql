@@ -14,3 +14,10 @@ show pg_logging.buffer_position;
 select 'aaaaa'::int;
 show pg_logging.buffer_position;
 select * from logging.get_log(true);
+
+select repeat('aaaaaaaaa', 20)::int;
+select repeat('aaaaaaaaa', 20)::int;
+select repeat('aaaaaaaaa', 20)::int;
+select repeat('aaaaaaaaa', 20)::int;
+show pg_logging.buffer_position;
+select * from logging.get_log(true);
