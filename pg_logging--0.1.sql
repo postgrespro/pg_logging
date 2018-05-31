@@ -38,6 +38,15 @@ create or replace function flush_log()
 returns void as 'MODULE_PATHNAME', 'flush_logged_data'
 language c;
 
+create or replace function test_ereport(
+	elevel		error_level,
+	message		cstring,
+	detail		cstring,
+	hint		cstring
+)
+returns void as 'MODULE_PATHNAME', 'test_ereport'
+language c;
+
 /* create view to simplify usage of get_log function */
 create view pg_log as
 	select

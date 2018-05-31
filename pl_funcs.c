@@ -5,6 +5,7 @@
  * Copyright (c) 2018, Postgres Professional
  */
 #include "postgres.h"
+#include "tsearch/ts_locale.h"
 #include "catalog/pg_type_d.h"
 #include "funcapi.h"
 #include "utils/builtins.h"
@@ -14,6 +15,7 @@
 
 PG_FUNCTION_INFO_V1( get_logged_data );
 PG_FUNCTION_INFO_V1( flush_logged_data );
+PG_FUNCTION_INFO_V1( test_ereport );
 PG_FUNCTION_INFO_V1( errlevel_in );
 PG_FUNCTION_INFO_V1( errlevel_out );
 PG_FUNCTION_INFO_V1( errlevel_eq );
@@ -83,7 +85,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = pg_atomic_read_u32(&hdr->endpos);
 		usercxt->startpos = hdr->readpos;
-		usercxt->wraparound = usercxt->until < hdr->readpos;
+		usercxt->wraparound = hdr->wraparound;
+		hdr->wraparound = false;
 
 		/* Create tuple descriptor */
 		tupdesc = CreateTemplateTupleDesc(Natts_pg_logging_data, false);
@@ -138,6 +141,9 @@ get_logged_data(PG_FUNCTION_ARGS)
 		 * block using information from buffer
 		 */
 		item = (CollectedItem *) data;
+		fprintf(stderr, "read pos: %d\n", hdr->readpos);
+		Assert(item->totallen < hdr->buffer_size);
+
 		item = (CollectedItem *) palloc0(item->totallen);
 		memcpy(item, data, offsetof(CollectedItem, data));
 		data += ITEM_HDR_LEN;
@@ -195,6 +201,17 @@ get_logged_data(PG_FUNCTION_ARGS)
 }
 
 Datum
+test_ereport(PG_FUNCTION_ARGS)
+{
+	ereport(PG_GETARG_INT32(0),
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("%s", PG_GETARG_CSTRING(1)),
+			 errdetail("%s", PG_GETARG_CSTRING(2)),
+			 errhint("%s", PG_GETARG_CSTRING(3))));
+	PG_RETURN_VOID();
+}
+
+Datum
 errlevel_out(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_CSTRING(get_errlevel_name(PG_GETARG_INT32(0)));
@@ -203,7 +220,7 @@ errlevel_out(PG_FUNCTION_ARGS)
 Datum
 errlevel_in(PG_FUNCTION_ARGS)
 {
-	char   *str = PG_GETARG_CSTRING(0);
+	char   *str = lowerstr(PG_GETARG_CSTRING(0));
 	int		len = strlen(str);
 	struct ErrorLevel *el;
 

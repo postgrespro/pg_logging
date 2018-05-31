@@ -28,6 +28,7 @@ int						buffer_position = 0;	/* just mock */
 shm_toc				   *toc = NULL;
 LoggingShmemHdr		   *hdr = NULL;
 bool					shmem_initialized = false;
+bool					buffer_increase_suggested = false;
 
 static emit_log_hook_type		pg_logging_log_hook_next = NULL;
 static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
@@ -129,9 +130,12 @@ add_block(char *data, char *block, int bytes_cp)
 static void
 copy_error_data_to_shmem(ErrorData *edata)
 {
-	char   *data;
+	char		   *data;
+	bool			wrap;
 	CollectedItem	item;
-	uint32	endpos, curpos, savedpos;
+	uint32			endpos,
+					curpos,
+					savedpos;
 
 	/* calculate length */
 	item.totallen = ITEM_HDR_LEN;
@@ -152,41 +156,56 @@ copy_error_data_to_shmem(ErrorData *edata)
 	curpos = pg_atomic_read_u32(&hdr->endpos);
 	while (true)
 	{
-		bool	wrap = false;
-		if (curpos + ITEM_HDR_LEN > hdr->buffer_size)
+		wrap = false;
+
+		savedpos = curpos;
+		if (savedpos + ITEM_HDR_LEN > hdr->buffer_size)
 		{
 			fprintf(stderr, "skipping the end, curpos, %d, header: %ld, skipped: %d\n",
 					curpos, ITEM_HDR_LEN, hdr->buffer_size - curpos);
-			curpos = 0;
+			savedpos = 0;
 			wrap = true;
 		}
 
-		endpos = curpos + item.totallen;
+		endpos = savedpos + item.totallen;
 		if (endpos >= hdr->buffer_size)
 		{
 			endpos = endpos - hdr->buffer_size;
 			wrap = true;
 		}
 
-		if (wrap)
-		{
-			LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-			while (hdr->readpos < endpos)
-			{
-				CollectedItem *item = (CollectedItem *) (hdr->data + hdr->readpos);
-				hdr->readpos += item->totallen;
-			}
-			LWLockRelease(&hdr->hdr_lock);
-		}
-
-		savedpos = curpos;
 		if (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos))
 			break;
 	}
 
-	curpos = savedpos;
-	fprintf(stderr, "%d, %d\n", curpos, item.totallen);
-	data = hdr->data + curpos;
+	if (wrap || hdr->wraparound)
+	{
+		/* push forward reading position */
+		bool	old_wrap = hdr->wraparound;
+
+		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+		if (old_wrap && !hdr->wraparound)
+			/* reader already read all the messages */
+			goto writing;
+
+		hdr->wraparound = true;
+		while (hdr->readpos <= endpos)
+		{
+			CollectedItem *item = (CollectedItem *) (hdr->data + hdr->readpos);
+			hdr->readpos += item->totallen;
+			if (!buffer_increase_suggested)
+			{
+				fprintf(stderr, "consider increasing pg_logging buffer, readpos moved to: %d\n",
+						hdr->readpos);
+				buffer_increase_suggested = true;
+			}
+		}
+		LWLockRelease(&hdr->hdr_lock);
+	}
+
+writing:
+	data = hdr->data + savedpos;
+	fprintf(stderr, "writing: %ld, %d\n", data - hdr->data, item.totallen);
 	Assert(data < (hdr->data + hdr->buffer_size));
 	memcpy(data, &item, ITEM_HDR_LEN);
 	data += ITEM_HDR_LEN;

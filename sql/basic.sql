@@ -21,3 +21,8 @@ select repeat('aaaaaaaaa', 20)::int;
 select repeat('aaaaaaaaa', 20)::int;
 show pg_logging.buffer_position;
 select * from logging.get_log(true);
+
+select logging.test_ereport('error', 'one', 'two', 'three');
+select * from logging.get_log(true);
+
+drop extension pg_logging;

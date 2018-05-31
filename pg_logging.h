@@ -31,6 +31,7 @@ typedef struct LoggingShmemHdr
 	uint32				readpos;
 	int					buffer_size;	/* total size of buffer */
 	LWLock				hdr_lock;
+	bool				wraparound;
 } LoggingShmemHdr;
 
 struct ErrorLevel {

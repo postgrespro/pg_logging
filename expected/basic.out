@@ -71,3 +71,14 @@ select * from logging.get_log(true);
     20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      844
 (4 rows)
 
+select logging.test_ereport('error', 'one', 'two', 'three');
+ERROR:  one
+DETAIL:  two
+HINT:  three
+select * from logging.get_log(true);
+ level | errno | message | detail | hint  | position 
+-------+-------+---------+--------+-------+----------
+    20 |     0 | one     | two    | three |       64
+(1 row)
+
+drop extension pg_logging;
