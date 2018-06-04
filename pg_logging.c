@@ -29,9 +29,19 @@ shm_toc				   *toc = NULL;
 LoggingShmemHdr		   *hdr = NULL;
 bool					shmem_initialized = false;
 bool					buffer_increase_suggested = false;
+bool					log_in_process = false;
 
 static emit_log_hook_type		pg_logging_log_hook_next = NULL;
 static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
+
+static void pg_logging_log_hook(ErrorData *edata);
+static void	pg_logging_shmem_hook(void);
+
+enum {
+	WRAP_NONE,
+	WRAP_PARTIAL,
+	WRAP_FULL,
+};
 
 #define safe_strlen(s) ((s) ? strlen(s) + 1 : 0)
 
@@ -60,11 +70,8 @@ buffer_position_check_hook(int *newval, void **extra, GucSource source)
 static const char *
 buffer_position_show_hook(void)
 {
-	char *s = palloc0(20);
-
-	buffer_position = pg_atomic_read_u32(&hdr->endpos);
-	pg_ltoa(buffer_position, s);
-	return s;
+	return psprintf("endpos: %d, readpos: %d",
+				pg_atomic_read_u32(&hdr->endpos), hdr->readpos);
 }
 
 static void
@@ -74,7 +81,7 @@ setup_gucs(void)
 		"pg_logging.buffer_size",
 		"Sets size of the ring buffer used to keep logs", NULL,
 		&buffer_size_setting,
-		1024 /* 1MB */,
+		1, //1024 /* 1MB */,
 		1,
 		512 * 1024,	/* 512MB should be enough for everyone */
 		PGC_SUSET,
@@ -93,6 +100,22 @@ setup_gucs(void)
 		GUC_UNIT_BYTE,
 		buffer_position_check_hook, NULL, buffer_position_show_hook
 	);
+}
+
+static void
+install_hooks(void)
+{
+	pg_logging_log_hook_next	= emit_log_hook;
+	emit_log_hook				= pg_logging_log_hook;
+	pg_logging_shmem_hook_next	= shmem_startup_hook;
+	shmem_startup_hook			= pg_logging_shmem_hook;
+}
+
+static void
+uninstall_hooks(void)
+{
+	emit_log_hook		= pg_logging_log_hook_next;
+	shmem_startup_hook	= pg_logging_shmem_hook_next;
 }
 
 static char *
@@ -127,17 +150,68 @@ add_block(char *data, char *block, int bytes_cp)
 	return hdr->data + endpos;
 }
 
+static int
+push_reading_position(int readpos, bool *wrapped)
+{
+	CollectedItem *item;
+
+	*wrapped = false;
+	if (readpos + ITEM_HDR_LEN > hdr->buffer_size)
+	{
+		readpos = 0;
+		*wrapped = true;
+	}
+	else
+	{
+		int tail;
+
+		item = (CollectedItem *) (hdr->data + readpos);
+#ifdef CHECK_DATA
+		Assert(item->magic == PG_ITEM_MAGIC);
+#endif
+		readpos += item->totallen;
+		tail = readpos - hdr->buffer_size;
+		if (tail > 0) {
+			readpos = tail;
+			*wrapped = true;
+		}
+	}
+	if (!buffer_increase_suggested)
+	{
+		fprintf(stderr, "CONSIDER INCREASING PG_LOGGING BUFFER, READPOS MOVED TO: %d\n",
+				readpos);
+		buffer_increase_suggested = true;
+	}
+
+#ifdef CHECK_DATA
+	item = (CollectedItem *) (hdr->data + readpos);
+	Assert(item->magic == PG_ITEM_MAGIC);
+#endif
+
+	return readpos;
+}
+
 static void
 copy_error_data_to_shmem(ErrorData *edata)
 {
 	char		   *data;
-	bool			wrap;
+	int				wrap = WRAP_NONE;
 	CollectedItem	item;
 	uint32			endpos,
 					curpos,
-					savedpos;
+					savedpos,
+					readpos;
+
+	/* don't allow recursive logs */
+	if (log_in_process)
+		return;
+
+	log_in_process = true;
 
 	/* calculate length */
+#ifdef CHECK_DATA
+	item.magic = PG_ITEM_MAGIC;
+#endif
 	item.totallen = ITEM_HDR_LEN;
 	item.elevel = edata->elevel;
 	item.saved_errno = edata->saved_errno;
@@ -154,9 +228,10 @@ copy_error_data_to_shmem(ErrorData *edata)
 	 * according to data length.
 	 */
 	curpos = pg_atomic_read_u32(&hdr->endpos);
+
 	while (true)
 	{
-		wrap = false;
+		wrap = WRAP_NONE;
 
 		savedpos = curpos;
 		if (savedpos + ITEM_HDR_LEN > hdr->buffer_size)
@@ -164,48 +239,63 @@ copy_error_data_to_shmem(ErrorData *edata)
 			fprintf(stderr, "skipping the end, curpos, %d, header: %ld, skipped: %d\n",
 					curpos, ITEM_HDR_LEN, hdr->buffer_size - curpos);
 			savedpos = 0;
-			wrap = true;
+			wrap = WRAP_FULL;
 		}
 
 		endpos = savedpos + item.totallen;
 		if (endpos >= hdr->buffer_size)
 		{
 			endpos = endpos - hdr->buffer_size;
-			wrap = true;
+			wrap = WRAP_PARTIAL;
 		}
 
 		if (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos))
 			break;
 	}
 
-	if (wrap || hdr->wraparound)
-	{
-		/* push forward reading position */
-		bool	old_wrap = hdr->wraparound;
+	readpos = hdr->readpos;
+	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+	if (readpos != hdr->readpos)
+		goto unlock;
 
-		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-		if (old_wrap && !hdr->wraparound)
-			/* reader already read all the messages */
-			goto writing;
+	if (wrap)
+	{
+		bool rwrap = false;
 
 		hdr->wraparound = true;
-		while (hdr->readpos <= endpos)
+		fprintf(stderr, "readpos 0: %d\n", hdr->readpos);
+		if (wrap == WRAP_PARTIAL && savedpos < readpos)
+			while (!rwrap)
+				hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
+
+		fprintf(stderr, "readpos 1: %d\n", hdr->readpos);
+		while (hdr->readpos < endpos)
+			hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
+		fprintf(stderr, "readpos 2: %d\n", hdr->readpos);
+		Assert(!rwrap);
+	}
+	else if (hdr->wraparound)
+	{
+		bool rwrap = false;
+
+		fprintf(stderr, "readpos 3: %d\n", hdr->readpos);
+		while (hdr->readpos < endpos)
 		{
-			CollectedItem *item = (CollectedItem *) (hdr->data + hdr->readpos);
-			hdr->readpos += item->totallen;
-			if (!buffer_increase_suggested)
+			hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
+			if (rwrap)
 			{
-				fprintf(stderr, "consider increasing pg_logging buffer, readpos moved to: %d\n",
-						hdr->readpos);
-				buffer_increase_suggested = true;
+				hdr->wraparound = false;
+				break;
 			}
 		}
-		LWLockRelease(&hdr->hdr_lock);
+		fprintf(stderr, "readpos 4: %d\n", hdr->readpos);
 	}
 
-writing:
+unlock:
+	LWLockRelease(&hdr->hdr_lock);
+
 	data = hdr->data + savedpos;
-	fprintf(stderr, "writing: %ld, %d\n", data - hdr->data, item.totallen);
+	fprintf(stderr, "writing: %d, %d\n", savedpos, item.totallen);
 	Assert(data < (hdr->data + hdr->buffer_size));
 	memcpy(data, &item, ITEM_HDR_LEN);
 	data += ITEM_HDR_LEN;
@@ -213,6 +303,8 @@ writing:
 	data = add_block(data, edata->message, item.message_len);
 	data = add_block(data, edata->detail, item.detail_len);
 	data = add_block(data, edata->hint, item.hint_len);
+
+	log_in_process = false;
 }
 
 static void
@@ -221,7 +313,7 @@ pg_logging_log_hook(ErrorData *edata)
 	if (pg_logging_log_hook_next)
 		pg_logging_log_hook_next(edata);
 
-	if (shmem_initialized && !proc_exit_inprogress)
+	if (shmem_initialized && MyProc != NULL && !proc_exit_inprogress)
 		copy_error_data_to_shmem(edata);
 }
 
@@ -298,12 +390,7 @@ _PG_init(void)
 		return;
 
 	setup_gucs();
-
-	/* install hooks */
-	pg_logging_log_hook_next	= emit_log_hook;
-	emit_log_hook				= pg_logging_log_hook;
-	pg_logging_shmem_hook_next	= shmem_startup_hook;
-	shmem_startup_hook			= pg_logging_shmem_hook;
+	install_hooks();
 }
 
 /*
@@ -312,7 +399,5 @@ _PG_init(void)
 void
 _PG_fini(void)
 {
-	/* Uninstall hooks. */
-	emit_log_hook = pg_logging_log_hook_next;
-	shmem_startup_hook = pg_logging_shmem_hook_next;
+	uninstall_hooks();
 }

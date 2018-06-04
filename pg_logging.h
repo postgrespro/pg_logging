@@ -6,9 +6,14 @@
 #include "port/atomics.h"
 #include "storage/lwlock.h"
 
+#define CHECK_DATA
+
 /* CollectedItem contains offsets in saved block */
 typedef struct CollectedItem
 {
+#ifdef CHECK_DATA
+	int			magic;
+#endif
 	int			totallen;		/* size of this block */
 	int			saved_errno;			/* errno at entry */
 	char		elevel;			/* error level */
@@ -28,7 +33,7 @@ typedef struct LoggingShmemHdr
 {
 	char			   *data;
 	pg_atomic_uint32	endpos;
-	uint32				readpos;
+	volatile uint32		readpos;
 	int					buffer_size;	/* total size of buffer */
 	LWLock				hdr_lock;
 	bool				wraparound;
@@ -40,6 +45,7 @@ struct ErrorLevel {
 };
 
 #define	PG_LOGGING_MAGIC	0xAABBCCDD
+#define	PG_ITEM_MAGIC		0x06054AB5
 
 // views
 #define Natts_pg_logging_data		6
