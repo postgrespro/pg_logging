@@ -160,6 +160,12 @@ push_reading_position(int readpos, bool *wrapped)
 	{
 		readpos = 0;
 		*wrapped = true;
+
+#ifdef CHECK_DATA
+		item = (CollectedItem *) hdr->data;
+		Assert(item->magic == PG_ITEM_MAGIC);
+#endif
+
 	}
 	else
 	{
@@ -182,11 +188,6 @@ push_reading_position(int readpos, bool *wrapped)
 				readpos);
 		buffer_increase_suggested = true;
 	}
-
-#ifdef CHECK_DATA
-	item = (CollectedItem *) (hdr->data + readpos);
-	Assert(item->magic == PG_ITEM_MAGIC);
-#endif
 
 	return readpos;
 }
@@ -263,12 +264,16 @@ copy_error_data_to_shmem(ErrorData *edata)
 		bool rwrap = false;
 
 		hdr->wraparound = true;
-		fprintf(stderr, "readpos 0: %d\n", hdr->readpos);
 		if (wrap == WRAP_PARTIAL && savedpos < readpos)
+		{
+			fprintf(stderr, "readpos 0: %d\n", hdr->readpos);
 			while (!rwrap)
 				hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
+		}
 
 		fprintf(stderr, "readpos 1: %d\n", hdr->readpos);
+
+		rwrap = false;
 		while (hdr->readpos < endpos)
 			hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
 		fprintf(stderr, "readpos 2: %d\n", hdr->readpos);
@@ -295,7 +300,7 @@ unlock:
 	LWLockRelease(&hdr->hdr_lock);
 
 	data = hdr->data + savedpos;
-	fprintf(stderr, "writing: %d, %d\n", savedpos, item.totallen);
+	fprintf(stderr, "writing: %d, %d, %d\n", savedpos, endpos, item.totallen);
 	Assert(data < (hdr->data + hdr->buffer_size));
 	memcpy(data, &item, ITEM_HDR_LEN);
 	data += ITEM_HDR_LEN;
