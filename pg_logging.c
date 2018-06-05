@@ -70,8 +70,7 @@ buffer_position_check_hook(int *newval, void **extra, GucSource source)
 static const char *
 buffer_position_show_hook(void)
 {
-	return psprintf("endpos: %d, readpos: %d",
-				pg_atomic_read_u32(&hdr->endpos), hdr->readpos);
+	return psprintf("endpos: %d, readpos: %d", hdr->endpos, hdr->readpos);
 }
 
 static void
@@ -81,7 +80,7 @@ setup_gucs(void)
 		"pg_logging.buffer_size",
 		"Sets size of the ring buffer used to keep logs", NULL,
 		&buffer_size_setting,
-		1, //1024 /* 1MB */,
+		1024, //1024 /* 1MB */,
 		1,
 		512 * 1024,	/* 512MB should be enough for everyone */
 		PGC_SUSET,
@@ -200,8 +199,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 	CollectedItem	item;
 	uint32			endpos,
 					curpos,
-					savedpos,
-					readpos;
+					savedpos;
 
 	/* don't allow recursive logs */
 	if (log_in_process)
@@ -228,62 +226,44 @@ copy_error_data_to_shmem(ErrorData *edata)
 	 * Then check the place with the data and calculate the position
 	 * according to data length.
 	 */
-	curpos = pg_atomic_read_u32(&hdr->endpos);
 
-	while (true)
+	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+	savedpos = curpos = hdr->endpos;
+
+	if (savedpos + ITEM_HDR_LEN > hdr->buffer_size)
 	{
-		wrap = WRAP_NONE;
-
-		savedpos = curpos;
-		if (savedpos + ITEM_HDR_LEN > hdr->buffer_size)
-		{
-			fprintf(stderr, "skipping the end, curpos, %d, header: %ld, skipped: %d\n",
-					curpos, ITEM_HDR_LEN, hdr->buffer_size - curpos);
-			savedpos = 0;
-			wrap = WRAP_FULL;
-		}
-
-		endpos = savedpos + item.totallen;
-		if (endpos >= hdr->buffer_size)
-		{
-			endpos = endpos - hdr->buffer_size;
-			wrap = WRAP_PARTIAL;
-		}
-
-		if (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, endpos))
-			break;
+		savedpos = 0;
+		wrap = WRAP_FULL;
 	}
 
-	readpos = hdr->readpos;
-	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-	if (readpos != hdr->readpos)
-		goto unlock;
+	endpos = savedpos + item.totallen;
+	if (endpos >= hdr->buffer_size)
+	{
+		endpos = endpos - hdr->buffer_size;
+		wrap = WRAP_PARTIAL;
+	}
+	hdr->endpos = endpos;
 
 	if (wrap)
 	{
 		bool rwrap = false;
 
 		hdr->wraparound = true;
-		if (wrap == WRAP_PARTIAL && savedpos < readpos)
+		if (wrap == WRAP_PARTIAL && savedpos < hdr->readpos)
 		{
-			fprintf(stderr, "readpos 0: %d\n", hdr->readpos);
 			while (!rwrap)
 				hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
 		}
 
-		fprintf(stderr, "readpos 1: %d\n", hdr->readpos);
-
 		rwrap = false;
 		while (hdr->readpos < endpos)
 			hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
-		fprintf(stderr, "readpos 2: %d\n", hdr->readpos);
 		Assert(!rwrap);
 	}
 	else if (hdr->wraparound)
 	{
 		bool rwrap = false;
 
-		fprintf(stderr, "readpos 3: %d\n", hdr->readpos);
 		while (hdr->readpos < endpos)
 		{
 			hdr->readpos = push_reading_position(hdr->readpos, &rwrap);
@@ -293,14 +273,11 @@ copy_error_data_to_shmem(ErrorData *edata)
 				break;
 			}
 		}
-		fprintf(stderr, "readpos 4: %d\n", hdr->readpos);
 	}
 
-unlock:
-	LWLockRelease(&hdr->hdr_lock);
-
 	data = hdr->data + savedpos;
-	fprintf(stderr, "writing: %d, %d, %d\n", savedpos, endpos, item.totallen);
+	fprintf(stderr, "readpos: %d, curpos: %d, endpos %d\n",
+		hdr->readpos, savedpos, hdr->endpos);
 	Assert(data < (hdr->data + hdr->buffer_size));
 	memcpy(data, &item, ITEM_HDR_LEN);
 	data += ITEM_HDR_LEN;
@@ -308,6 +285,8 @@ unlock:
 	data = add_block(data, edata->message, item.message_len);
 	data = add_block(data, edata->detail, item.detail_len);
 	data = add_block(data, edata->hint, item.hint_len);
+
+	LWLockRelease(&hdr->hdr_lock);
 
 	log_in_process = false;
 }
@@ -355,7 +334,8 @@ pg_logging_shmem_hook(void)
 
 		hdr = shm_toc_allocate(toc, sizeof(LoggingShmemHdr));
 		hdr->buffer_size = bufsize;
-		pg_atomic_init_u32(&hdr->endpos, 0);
+		hdr->endpos = 0;
+		hdr->readpos = 0;
 
 		/* initialize buffer lwlock */
 		LWLockRegisterTranche(tranche_id, "pg_logging tranche");

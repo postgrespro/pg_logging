@@ -3,7 +3,6 @@
 
 #include "postgres.h"
 #include "pg_config.h"
-#include "port/atomics.h"
 #include "storage/lwlock.h"
 
 #define CHECK_DATA
@@ -32,8 +31,8 @@ typedef struct CollectedItem
 typedef struct LoggingShmemHdr
 {
 	char			   *data;
-	pg_atomic_uint32	endpos;
 	volatile uint32		readpos;
+	volatile uint32		endpos;
 	int					buffer_size;	/* total size of buffer */
 	LWLock				hdr_lock;
 	bool				wraparound;

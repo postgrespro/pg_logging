@@ -22,7 +22,6 @@ PG_FUNCTION_INFO_V1( errlevel_eq );
 
 typedef struct {
 	uint32		until;
-	uint32		startpos;
 	bool		wraparound;
 } logged_data_ctx;
 
@@ -42,15 +41,8 @@ get_errlevel_name(int code)
 void
 reset_counters_in_shmem(void)
 {
-	uint32 curpos = pg_atomic_read_u32(&hdr->endpos);
-
 	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-	while (true)
-	{
-		if (pg_atomic_compare_exchange_u32(&hdr->endpos, &curpos, 0))
-			break;
-	}
-
+	hdr->endpos = 0;
 	hdr->readpos = 0;
 	LWLockRelease(&hdr->hdr_lock);
 }
@@ -83,8 +75,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		 */
 		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
-		usercxt->until = pg_atomic_read_u32(&hdr->endpos);
-		usercxt->startpos = hdr->readpos;
+		usercxt->until = hdr->endpos;
 		usercxt->wraparound = hdr->wraparound;
 		hdr->wraparound = false;
 
