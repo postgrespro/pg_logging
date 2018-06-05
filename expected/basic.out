@@ -1,5 +1,6 @@
 create schema logging;
 create extension pg_logging schema logging;
+set log_statement=none;
 set pg_logging.buffer_position = 0;
 ERROR:  this parameter could not be changed
 set pg_logging.buffer_size = 2000;
@@ -8,7 +9,7 @@ set pg_logging.buffer_size = 1;
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- 0
+ endpos: 0, readpos: 0
 (1 row)
 
 select logging.flush_log();
@@ -28,7 +29,7 @@ ERROR:  division by zero
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- 44
+ endpos: 48, readpos: 0
 (1 row)
 
 select 'aaaaa'::int;
@@ -38,14 +39,14 @@ LINE 1: select 'aaaaa'::int;
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- 112
+ endpos: 120, readpos: 0
 (1 row)
 
 select * from logging.get_log(true);
  level | errno |                  message                  | detail | hint | position 
 -------+-------+-------------------------------------------+--------+------+----------
     20 |     0 | division by zero                          |        |      |        0
-    20 |     0 | invalid input syntax for integer: "aaaaa" |        |      |       44
+    20 |     0 | invalid input syntax for integer: "aaaaa" |        |      |       48
 (2 rows)
 
 select repeat('aaaaaaaaa', 20)::int;
@@ -59,16 +60,16 @@ ERROR:  invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- 64
+ endpos: 88, readpos: 120
 (1 row)
 
 select * from logging.get_log(true);
  level | errno |                                                                                                         message                                                                                                          | detail | hint | position 
 -------+-------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+------+----------
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      112
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      356
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      600
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      844
+    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      120
+    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      368
+    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      616
+    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      864
 (4 rows)
 
 select logging.test_ereport('error', 'one', 'two', 'three');
@@ -78,7 +79,7 @@ HINT:  three
 select * from logging.get_log(true);
  level | errno | message | detail | hint  | position 
 -------+-------+---------+--------+-------+----------
-    20 |     0 | one     | two    | three |       64
+    20 |     0 | one     | two    | three |       88
 (1 row)
 
 drop extension pg_logging;

@@ -132,7 +132,6 @@ get_logged_data(PG_FUNCTION_ARGS)
 		 * block using information from buffer
 		 */
 		item = (CollectedItem *) data;
-		fprintf(stderr, "read pos: %d\n", hdr->readpos);
 		Assert(item->totallen < hdr->buffer_size);
 
 		item = (CollectedItem *) palloc0(item->totallen);
