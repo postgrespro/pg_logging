@@ -276,8 +276,6 @@ copy_error_data_to_shmem(ErrorData *edata)
 	}
 
 	data = hdr->data + savedpos;
-	fprintf(stderr, "readpos: %d, curpos: %d, endpos %d\n",
-		hdr->readpos, savedpos, hdr->endpos);
 	Assert(data < (hdr->data + hdr->buffer_size));
 	memcpy(data, &item, ITEM_HDR_LEN);
 	data += ITEM_HDR_LEN;
@@ -343,7 +341,6 @@ pg_logging_shmem_hook(void)
 
 		shm_toc_insert(toc, 0, hdr);
 		hdr->data = shm_toc_allocate(toc, hdr->buffer_size);
-		fprintf(stderr, "data addr: %p\n", hdr->data);
 		shm_toc_insert(toc, 1, hdr->data);
 	}
 	else
@@ -353,7 +350,6 @@ pg_logging_shmem_hook(void)
 		hdr = shm_toc_lookup(toc, 0, false);
 #else
 		hdr = shm_toc_lookup(toc, 0);
-		fprintf(stderr, "data addr: %p\n", hdr->data);
 #endif
 	}
 
