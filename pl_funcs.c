@@ -44,6 +44,7 @@ reset_counters_in_shmem(void)
 	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 	hdr->endpos = 0;
 	hdr->readpos = 0;
+	hdr->wraparound = false;
 	LWLockRelease(&hdr->hdr_lock);
 }
 
@@ -86,12 +87,28 @@ get_logged_data(PG_FUNCTION_ARGS)
 						   "level", INT4OID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_errno,
 						   "errno", INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_errcode,
+						   "errcode", INT4OID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_message,
 						   "message", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_detail,
 						   "detail", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_detail_log,
+						   "detail_log", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_hint,
 						   "hint", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_context,
+						   "context", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_context_domain,
+						   "context_domain", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_domain,
+						   "domain", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_filename,
+						   "filename", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_lineno,
+						   "lineno", INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_funcname,
+						   "funcname", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_position,
 						   "position", INT4OID, -1, 0);
 
@@ -160,24 +177,30 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
+		values[Anum_pg_logging_errcode - 1] = Int32GetDatum(item->sqlerrcode);
+		values[Anum_pg_logging_lineno - 1] = Int32GetDatum(item->lineno);
 		values[Anum_pg_logging_position - 1] = Int32GetDatum(curpos);
 
 		data = item->data;
-		values[Anum_pg_logging_message - 1]	= CStringGetTextDatum(data);
-		data += item->message_len;
-		if (item->detail_len)
-		{
-			values[Anum_pg_logging_detail - 1] = CStringGetTextDatum(data);
-			data += item->detail_len;
-		}
-		else isnull[Anum_pg_logging_detail - 1] = true;
+#define	EXTRACT_VAL_TO(attnum, len)								\
+do {															\
+	if (len) {													\
+		values[(attnum) - 1]	= CStringGetTextDatum(data);	\
+		data += (len);											\
+	}															\
+	else isnull[(attnum) - 1] = true;							\
+} while (0);
 
-		if (item->hint_len)
-		{
-			values[Anum_pg_logging_hint - 1] = CStringGetTextDatum(data);
-			data += item->hint_len;
-		}
-		else isnull[Anum_pg_logging_hint - 1] = true;
+		/* ordering is important !! */
+		EXTRACT_VAL_TO(Anum_pg_logging_message, item->message_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_detail, item->detail_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_detail_log, item->detail_log_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_hint, item->hint_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_context, item->context_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_filename, item->filename_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_funcname, item->funcname_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_domain, item->domain_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_context_domain, item->context_domain_len);
 
 		/* Form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);

@@ -22,9 +22,17 @@ create cast (int AS error_level) without function as assignment;
 create type log_item as (
 	level		int,
 	errno		int,
+	errcode		int,
 	message		text,
 	detail		text,
+	detail_log	text,
 	hint		text,
+	context		text,
+	context_domain		text,
+	domain		text,
+	filename	text,
+	lineno		int,
+	funcname	text,
 	position	int
 );
 

@@ -29,7 +29,7 @@ shm_toc				   *toc = NULL;
 LoggingShmemHdr		   *hdr = NULL;
 bool					shmem_initialized = false;
 bool					buffer_increase_suggested = false;
-bool					log_in_process = false;
+bool					logging_enabled = true;
 
 static emit_log_hook_type		pg_logging_log_hook_next = NULL;
 static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
@@ -88,6 +88,16 @@ setup_gucs(void)
 		NULL, buffer_size_assign_hook, NULL
 	);
 
+	DefineCustomBoolVariable(
+		"pg_logging.enabled",
+		"Enable ring buffer for logs", NULL,
+		&logging_enabled,
+		true,
+		PGC_SUSET,
+		0,
+		NULL, NULL, NULL
+	);
+
 	DefineCustomIntVariable(
 		"pg_logging.buffer_position",
 		"Used to check current position in the buffer", NULL,
@@ -118,7 +128,7 @@ uninstall_hooks(void)
 }
 
 static char *
-add_block(char *data, char *block, int bytes_cp)
+add_block(char *data, const char *block, int bytes_cp)
 {
 	uint32 endpos = data - hdr->data;
 
@@ -194,6 +204,10 @@ push_reading_position(int readpos, bool *wrapped)
 static void
 copy_error_data_to_shmem(ErrorData *edata)
 {
+#define ADD_STRING(totallen, string_len, string) \
+	(totallen) += ((string_len) = safe_strlen(string))
+
+	static bool		log_in_process = false;
 	char		   *data;
 	int				wrap = WRAP_NONE;
 	CollectedItem	item;
@@ -214,10 +228,19 @@ copy_error_data_to_shmem(ErrorData *edata)
 	item.totallen = ITEM_HDR_LEN;
 	item.elevel = edata->elevel;
 	item.saved_errno = edata->saved_errno;
-	item.message_len = safe_strlen(edata->message);
-	item.detail_len = safe_strlen(edata->detail);
-	item.hint_len = safe_strlen(edata->hint);
-	item.totallen += INTALIGN(item.message_len + item.detail_len + item.hint_len);
+	item.sqlerrcode = edata->sqlerrcode;
+	item.lineno = edata->lineno;
+
+	ADD_STRING(item.totallen, item.message_len, edata->message);
+	ADD_STRING(item.totallen, item.detail_len, edata->detail);
+	ADD_STRING(item.totallen, item.detail_log_len, edata->detail_log);
+	ADD_STRING(item.totallen, item.hint_len, edata->hint);
+	ADD_STRING(item.totallen, item.context_len, edata->context);
+	ADD_STRING(item.totallen, item.filename_len, edata->filename);
+	ADD_STRING(item.totallen, item.funcname_len, edata->funcname);
+	ADD_STRING(item.totallen, item.domain_len, edata->domain);
+	ADD_STRING(item.totallen, item.context_domain_len, edata->context_domain);
+	item.totallen = INTALIGN(item.totallen);
 
 	/*
 	 * Find the place to put the block.
@@ -225,22 +248,27 @@ copy_error_data_to_shmem(ErrorData *edata)
 	 * move to the beginning.
 	 * Then check the place with the data and calculate the position
 	 * according to data length.
+	 *
+	 * We use reading position here from written data and have to use lock.
+	 * Also reading position will be moved forward if needed.
 	 */
-
 	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 	savedpos = curpos = hdr->endpos;
 
 	if (savedpos + ITEM_HDR_LEN > hdr->buffer_size)
 	{
 		savedpos = 0;
+		endpos = item.totallen;
 		wrap = WRAP_FULL;
 	}
-
-	endpos = savedpos + item.totallen;
-	if (endpos >= hdr->buffer_size)
+	else
 	{
-		endpos = endpos - hdr->buffer_size;
-		wrap = WRAP_PARTIAL;
+		endpos = savedpos + item.totallen;
+		if (endpos >= hdr->buffer_size)
+		{
+			endpos = endpos - hdr->buffer_size;
+			wrap = WRAP_PARTIAL;
+		}
 	}
 	hdr->endpos = endpos;
 
@@ -275,18 +303,33 @@ copy_error_data_to_shmem(ErrorData *edata)
 		}
 	}
 
-	data = hdr->data + savedpos;
-	Assert(data < (hdr->data + hdr->buffer_size));
-	memcpy(data, &item, ITEM_HDR_LEN);
-	data += ITEM_HDR_LEN;
-
-	data = add_block(data, edata->message, item.message_len);
-	data = add_block(data, edata->detail, item.detail_len);
-	data = add_block(data, edata->hint, item.hint_len);
-
 	LWLockRelease(&hdr->hdr_lock);
 
-	log_in_process = false;
+	if (hdr->endpos >= savedpos && hdr->endpos < endpos)
+	{
+		/* should not happen if the buffer is large enough */
+		log_in_process = false;
+		elog(LOG, "pg_logging buffer overflow");
+	}
+	else
+	{
+		data = hdr->data + savedpos;
+		Assert(data < (hdr->data + hdr->buffer_size));
+		memcpy(data, &item, ITEM_HDR_LEN);
+		data += ITEM_HDR_LEN;
+
+		data = add_block(data, edata->message, item.message_len);
+		data = add_block(data, edata->detail, item.detail_len);
+		data = add_block(data, edata->detail_log, item.detail_log_len);
+		data = add_block(data, edata->hint, item.hint_len);
+		data = add_block(data, edata->context, item.context_len);
+		data = add_block(data, edata->filename, item.filename_len);
+		data = add_block(data, edata->funcname, item.funcname_len);
+		data = add_block(data, edata->domain, item.domain_len);
+		data = add_block(data, edata->context_domain, item.context_domain_len);
+
+		log_in_process = false;
+	}
 }
 
 static void
