@@ -4,6 +4,7 @@
 #include "postgres.h"
 #include "pg_config.h"
 #include "storage/lwlock.h"
+#include "utils/timestamp.h"
 
 #define CHECK_DATA
 
@@ -21,6 +22,7 @@ typedef struct CollectedItem
 #ifdef CHECK_DATA
 	int			magic;
 #endif
+	TimestampTz	logtime;
 	int			totallen;		/* size of this block */
 	int			saved_errno;	/* errno at entry */
 	int			sqlerrcode;		/* encoded ERRSTATE */
@@ -34,13 +36,15 @@ typedef struct CollectedItem
 	int			context_len;
 	int			domain_len;
 	int			context_domain_len;
-	int			object_name_len;	/* table, column, or datatype */
-	ItemObjectType	object_type;
 
-	/* location in the code */
-	int			filename_len;
-	int			lineno;
-	int			funcname_len;
+	/* query d\wata */
+	int			internalpos;
+	int			internalquery_len;
+
+	/* extra data */
+	int			ppid;
+	int			appname_len;
+	Oid			database_id;
 
 	/* texts are contained here */
 	char		data[FLEXIBLE_ARRAY_MEMBER];
@@ -66,22 +70,28 @@ struct ErrorLevel {
 #define	PG_LOGGING_MAGIC	0xAABBCCDD
 #define	PG_ITEM_MAGIC		0x06054AB5
 
-// view
-#define Natts_pg_logging_data		14
-#define Anum_pg_logging_level		1	/* int */
-#define Anum_pg_logging_errno		2	/* int */
-#define Anum_pg_logging_errcode		3	/* int */
-#define Anum_pg_logging_message		4
-#define Anum_pg_logging_detail		5
-#define Anum_pg_logging_detail_log	6
-#define Anum_pg_logging_hint		7
-#define Anum_pg_logging_context		8
-#define Anum_pg_logging_context_domain		9
-#define Anum_pg_logging_domain		10
-#define Anum_pg_logging_filename	11
-#define Anum_pg_logging_lineno		12	/* int */
-#define Anum_pg_logging_funcname	13
-#define Anum_pg_logging_position	14	/* int */
+// view attributes
+enum {
+	Anum_pg_logging_logtime = 1,
+	Anum_pg_logging_level,
+	Anum_pg_logging_pid,
+	Anum_pg_logging_appname,
+	Anum_pg_logging_database,
+	Anum_pg_logging_errno,
+	Anum_pg_logging_errcode,
+	Anum_pg_logging_message,
+	Anum_pg_logging_detail,
+	Anum_pg_logging_detail_log,
+	Anum_pg_logging_hint,
+	Anum_pg_logging_context,
+	Anum_pg_logging_context_domain,
+	Anum_pg_logging_domain,
+	Anum_pg_logging_internalpos,
+	Anum_pg_logging_internalquery,
+	Anum_pg_logging_position,
+
+	Natts_pg_logging_data
+};
 
 extern struct ErrorLevel errlevel_wordlist[];
 extern LoggingShmemHdr	*hdr;

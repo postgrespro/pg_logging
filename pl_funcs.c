@@ -83,8 +83,16 @@ get_logged_data(PG_FUNCTION_ARGS)
 		/* Create tuple descriptor */
 		tupdesc = CreateTemplateTupleDesc(Natts_pg_logging_data, false);
 
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_logtime,
+						   "logtime", TIMESTAMPTZOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_level,
 						   "level", INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_pid,
+						   "pid", INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_appname,
+						   "appname", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_database,
+						   "database_id", INT4OID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_errno,
 						   "errno", INT4OID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_errcode,
@@ -103,12 +111,10 @@ get_logged_data(PG_FUNCTION_ARGS)
 						   "context_domain", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_domain,
 						   "domain", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_filename,
-						   "filename", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_lineno,
-						   "lineno", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_funcname,
-						   "funcname", TEXTOID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_internalpos,
+						   "internalpos", INT4OID, -1, 0);
+		TupleDescInitEntry(tupdesc, Anum_pg_logging_internalquery,
+						   "internalquery", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, Anum_pg_logging_position,
 						   "position", INT4OID, -1, 0);
 
@@ -175,10 +181,13 @@ get_logged_data(PG_FUNCTION_ARGS)
 		MemSet(values, 0, sizeof(values));
 		MemSet(isnull, 0, sizeof(isnull));
 
+		values[Anum_pg_logging_logtime - 1] = TimestampTzGetDatum(item->logtime);
 		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
 		values[Anum_pg_logging_errcode - 1] = Int32GetDatum(item->sqlerrcode);
-		values[Anum_pg_logging_lineno - 1] = Int32GetDatum(item->lineno);
+		values[Anum_pg_logging_database - 1] = Int32GetDatum(item->database_id);
+		values[Anum_pg_logging_pid - 1] = Int32GetDatum(item->ppid);
+		values[Anum_pg_logging_internalpos - 1] = Int32GetDatum(item->internalpos);
 		values[Anum_pg_logging_position - 1] = Int32GetDatum(curpos);
 
 		data = item->data;
@@ -197,10 +206,10 @@ do {															\
 		EXTRACT_VAL_TO(Anum_pg_logging_detail_log, item->detail_log_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_hint, item->hint_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_context, item->context_len);
-		EXTRACT_VAL_TO(Anum_pg_logging_filename, item->filename_len);
-		EXTRACT_VAL_TO(Anum_pg_logging_funcname, item->funcname_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_domain, item->domain_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_context_domain, item->context_domain_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_internalquery, item->internalquery_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_appname, item->appname_len);
 
 		/* Form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);

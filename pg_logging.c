@@ -80,9 +80,9 @@ setup_gucs(void)
 		"pg_logging.buffer_size",
 		"Sets size of the ring buffer used to keep logs", NULL,
 		&buffer_size_setting,
-		1024, //1024 /* 1MB */,
-		1,
-		512 * 1024,	/* 512MB should be enough for everyone */
+		1024 * 10, /* 10MB */
+		1024 * 10,
+		INT_MAX,
 		PGC_SUSET,
 		GUC_UNIT_KB,
 		NULL, buffer_size_assign_hook, NULL
@@ -215,8 +215,8 @@ copy_error_data_to_shmem(ErrorData *edata)
 					curpos,
 					savedpos;
 
-	/* don't allow recursive logs */
-	if (log_in_process)
+	/* don't allow recursive logs or quit if logs are disabled */
+	if (log_in_process || !logging_enabled)
 		return;
 
 	log_in_process = true;
@@ -225,21 +225,24 @@ copy_error_data_to_shmem(ErrorData *edata)
 #ifdef CHECK_DATA
 	item.magic = PG_ITEM_MAGIC;
 #endif
+	item.logtime = GetCurrentTimestamp();
 	item.totallen = ITEM_HDR_LEN;
 	item.elevel = edata->elevel;
 	item.saved_errno = edata->saved_errno;
 	item.sqlerrcode = edata->sqlerrcode;
-	item.lineno = edata->lineno;
+	item.ppid = MyProcPid;
+	item.database_id = MyDatabaseId;
+	item.internalpos = edata->internalpos;
 
 	ADD_STRING(item.totallen, item.message_len, edata->message);
 	ADD_STRING(item.totallen, item.detail_len, edata->detail);
 	ADD_STRING(item.totallen, item.detail_log_len, edata->detail_log);
 	ADD_STRING(item.totallen, item.hint_len, edata->hint);
 	ADD_STRING(item.totallen, item.context_len, edata->context);
-	ADD_STRING(item.totallen, item.filename_len, edata->filename);
-	ADD_STRING(item.totallen, item.funcname_len, edata->funcname);
 	ADD_STRING(item.totallen, item.domain_len, edata->domain);
 	ADD_STRING(item.totallen, item.context_domain_len, edata->context_domain);
+	ADD_STRING(item.totallen, item.appname_len, application_name);
+	ADD_STRING(item.totallen, item.internalquery_len, edata->internalquery);
 	item.totallen = INTALIGN(item.totallen);
 
 	/*
@@ -318,15 +321,16 @@ copy_error_data_to_shmem(ErrorData *edata)
 		memcpy(data, &item, ITEM_HDR_LEN);
 		data += ITEM_HDR_LEN;
 
+		/* ordering is important !!! */
 		data = add_block(data, edata->message, item.message_len);
 		data = add_block(data, edata->detail, item.detail_len);
 		data = add_block(data, edata->detail_log, item.detail_log_len);
 		data = add_block(data, edata->hint, item.hint_len);
 		data = add_block(data, edata->context, item.context_len);
-		data = add_block(data, edata->filename, item.filename_len);
-		data = add_block(data, edata->funcname, item.funcname_len);
 		data = add_block(data, edata->domain, item.domain_len);
 		data = add_block(data, edata->context_domain, item.context_domain_len);
+		data = add_block(data, edata->internalquery, item.internalquery_len);
+		data = add_block(data, application_name, item.appname_len);
 
 		log_in_process = false;
 	}
