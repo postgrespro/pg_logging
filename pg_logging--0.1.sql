@@ -40,7 +40,9 @@ create type log_item as (
 	internalquery		text,
 	userid				Oid,
 	backend_xid			bigint,
-	backend_xmin		bigint
+	backend_xmin		bigint,
+	remote_host			text,
+	command_tag			text
 );
 
 create or replace function get_log(

@@ -36,6 +36,8 @@ typedef struct CollectedItem
 	int			context_len;
 	int			domain_len;
 	int			context_domain_len;
+	int			command_tag_len;
+	int			remote_host_len;
 
 	/* query data */
 	int			internalpos;
@@ -98,6 +100,8 @@ enum {
 	Anum_pg_logging_userid,
 	Anum_pg_logging_backend_xid,
 	Anum_pg_logging_backend_xmin,
+	Anum_pg_logging_remote_host,
+	Anum_pg_logging_command_tag,
 
 	Natts_pg_logging_data
 };

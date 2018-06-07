@@ -188,6 +188,8 @@ do {															\
 		EXTRACT_VAL_TO(Anum_pg_logging_context_domain, item->context_domain_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_internalquery, item->internalquery_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_appname, item->appname_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_remote_host, item->remote_host_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_command_tag, item->command_tag_len);
 
 		/* Form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);

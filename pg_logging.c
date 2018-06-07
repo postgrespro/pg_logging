@@ -14,6 +14,8 @@
 #include "string.h"
 #include "utils/guc.h"
 #include "utils/builtins.h"
+#include "libpq/libpq-be.h"
+#include "utils/ps_status.h"
 #include "postmaster/autovacuum.h"
 
 #include "pg_logging.h"
@@ -216,6 +218,9 @@ copy_error_data_to_shmem(ErrorData *edata)
 	uint32			endpos,
 					curpos,
 					savedpos;
+	const char	   *psdisp = NULL,
+				   *remote_host = NULL;
+	int				displen = 0;
 
 	/* don't allow recursive logs or quit if logs are disabled */
 	if (log_in_process || !logging_enabled)
@@ -236,6 +241,8 @@ copy_error_data_to_shmem(ErrorData *edata)
 	item.database_id = MyDatabaseId;
 	item.internalpos = edata->internalpos;
 	item.log_line_number = ++log_line_number;
+	item.remote_host_len = 0;
+	item.command_tag_len = 0;
 
 	if (MyBackendId != InvalidBackendId && !IsAutoVacuumLauncherProcess() &&
 		!IsAutoVacuumWorkerProcess())
@@ -249,6 +256,17 @@ copy_error_data_to_shmem(ErrorData *edata)
 		PGXACT	   *xact = &ProcGlobal->allPgXact[MyProc->pgprocno];
 		item.backend_xid = xact->xid;
 		item.backend_xmin = xact->xmin;
+	}
+
+	if (MyProcPort)
+	{
+		/* command tag */
+		psdisp = get_ps_display(&displen);
+		item.totallen += (item.command_tag_len = displen);
+
+		/* remote host */
+		remote_host = MyProcPort->remote_host;
+		ADD_STRING(item.totallen, item.remote_host_len, remote_host);
 	}
 
 	ADD_STRING(item.totallen, item.message_len, edata->message);
@@ -348,6 +366,8 @@ copy_error_data_to_shmem(ErrorData *edata)
 		data = add_block(data, edata->context_domain, item.context_domain_len);
 		data = add_block(data, edata->internalquery, item.internalquery_len);
 		data = add_block(data, application_name, item.appname_len);
+		data = add_block(data, remote_host, item.remote_host_len);
+		data = add_block(data, psdisp, displen);
 
 		log_in_process = false;
 	}
