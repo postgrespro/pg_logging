@@ -80,43 +80,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 		usercxt->wraparound = hdr->wraparound;
 		hdr->wraparound = false;
 
-		/* Create tuple descriptor */
-		tupdesc = CreateTemplateTupleDesc(Natts_pg_logging_data, false);
-
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_logtime,
-						   "logtime", TIMESTAMPTZOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_level,
-						   "level", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_pid,
-						   "pid", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_appname,
-						   "appname", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_database,
-						   "database_id", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_errno,
-						   "errno", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_errcode,
-						   "errcode", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_message,
-						   "message", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_detail,
-						   "detail", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_detail_log,
-						   "detail_log", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_hint,
-						   "hint", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_context,
-						   "context", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_context_domain,
-						   "context_domain", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_domain,
-						   "domain", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_internalpos,
-						   "internalpos", INT4OID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_internalquery,
-						   "internalquery", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, Anum_pg_logging_position,
-						   "position", INT4OID, -1, 0);
+		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+			elog(ERROR, "return type must be a row type");
 
 		funccxt->tuple_desc = BlessTupleDesc(tupdesc);
 		funccxt->user_fctx = (void *) usercxt;
@@ -137,7 +102,6 @@ get_logged_data(PG_FUNCTION_ARGS)
 		HeapTuple		htup;
 		Datum			values[Natts_pg_logging_data];
 		bool			isnull[Natts_pg_logging_data];
-		int				curpos;
 
 		if (hdr->readpos + ITEM_HDR_LEN > hdr->buffer_size)
 		{
@@ -146,7 +110,6 @@ get_logged_data(PG_FUNCTION_ARGS)
 			continue;
 		}
 
-		curpos = hdr->readpos;
 		data = (char *) (hdr->data + hdr->readpos);
 		AssertPointerAlignment(data, 4);
 
@@ -185,10 +148,25 @@ get_logged_data(PG_FUNCTION_ARGS)
 		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
 		values[Anum_pg_logging_errcode - 1] = Int32GetDatum(item->sqlerrcode);
-		values[Anum_pg_logging_database - 1] = Int32GetDatum(item->database_id);
+		values[Anum_pg_logging_datid - 1] = Int32GetDatum(item->database_id);
 		values[Anum_pg_logging_pid - 1] = Int32GetDatum(item->ppid);
+		values[Anum_pg_logging_line_num - 1] = Int64GetDatum(item->log_line_number);
 		values[Anum_pg_logging_internalpos - 1] = Int32GetDatum(item->internalpos);
-		values[Anum_pg_logging_position - 1] = Int32GetDatum(curpos);
+
+		if (TransactionIdIsValid(item->backend_xid))
+			values[Anum_pg_logging_backend_xid - 1] = TransactionIdGetDatum(item->backend_xid);
+		else
+			isnull[Anum_pg_logging_backend_xid - 1] = true;
+
+		if (TransactionIdIsValid(item->backend_xmin))
+			values[Anum_pg_logging_backend_xmin - 1] = TransactionIdGetDatum(item->backend_xmin);
+		else
+			isnull[Anum_pg_logging_backend_xmin - 1] = true;
+
+		if (OidIsValid(item->user_id))
+			values[Anum_pg_logging_userid - 1] = ObjectIdGetDatum(item->user_id);
+		else
+			isnull[Anum_pg_logging_userid - 1] = true;
 
 		data = item->data;
 #define	EXTRACT_VAL_TO(attnum, len)								\

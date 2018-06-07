@@ -14,6 +14,7 @@
 #include "string.h"
 #include "utils/guc.h"
 #include "utils/builtins.h"
+#include "postmaster/autovacuum.h"
 
 #include "pg_logging.h"
 
@@ -81,7 +82,7 @@ setup_gucs(void)
 		"Sets size of the ring buffer used to keep logs", NULL,
 		&buffer_size_setting,
 		1024 * 10, /* 10MB */
-		1024 * 10,
+		1024,
 		INT_MAX,
 		PGC_SUSET,
 		GUC_UNIT_KB,
@@ -208,6 +209,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 	(totallen) += ((string_len) = safe_strlen(string))
 
 	static bool		log_in_process = false;
+	static uint64	log_line_number = 0;
 	char		   *data;
 	int				wrap = WRAP_NONE;
 	CollectedItem	item;
@@ -233,6 +235,21 @@ copy_error_data_to_shmem(ErrorData *edata)
 	item.ppid = MyProcPid;
 	item.database_id = MyDatabaseId;
 	item.internalpos = edata->internalpos;
+	item.log_line_number = ++log_line_number;
+
+	if (MyBackendId != InvalidBackendId && !IsAutoVacuumLauncherProcess() &&
+		!IsAutoVacuumWorkerProcess())
+		item.user_id = GetSessionUserId();
+	else
+		item.user_id = InvalidOid;
+
+	/* transaction info */
+	if (MyProc != NULL)
+	{
+		PGXACT	   *xact = &ProcGlobal->allPgXact[MyProc->pgprocno];
+		item.backend_xid = xact->xid;
+		item.backend_xmin = xact->xmin;
+	}
 
 	ADD_STRING(item.totallen, item.message_len, edata->message);
 	ADD_STRING(item.totallen, item.detail_len, edata->detail);
@@ -414,11 +431,19 @@ pg_logging_shmem_hook(void)
 void
 _PG_init(void)
 {
+	Size	bufsize;
+	Size	segsize;
+
 	if (!process_shared_preload_libraries_in_progress)
 		return;
 
 	setup_gucs();
 	install_hooks();
+
+	bufsize = INTALIGN(buffer_size_setting * 1024);
+	segsize = pg_logging_shmem_size(bufsize);
+
+	RequestAddinShmemSpace(segsize);
 }
 
 /*

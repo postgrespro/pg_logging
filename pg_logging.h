@@ -37,7 +37,7 @@ typedef struct CollectedItem
 	int			domain_len;
 	int			context_domain_len;
 
-	/* query d\wata */
+	/* query data */
 	int			internalpos;
 	int			internalquery_len;
 
@@ -45,6 +45,12 @@ typedef struct CollectedItem
 	int			ppid;
 	int			appname_len;
 	Oid			database_id;
+	int			user_id;
+	uint64		log_line_number;
+
+	/* transaction info */
+	TransactionId	backend_xid;
+	TransactionId	backend_xmin;
 
 	/* texts are contained here */
 	char		data[FLEXIBLE_ARRAY_MEMBER];
@@ -70,13 +76,14 @@ struct ErrorLevel {
 #define	PG_LOGGING_MAGIC	0xAABBCCDD
 #define	PG_ITEM_MAGIC		0x06054AB5
 
-// view attributes
+// view attributes, make sure it's equal to log_item type from sql
 enum {
 	Anum_pg_logging_logtime = 1,
 	Anum_pg_logging_level,
 	Anum_pg_logging_pid,
+	Anum_pg_logging_line_num,
 	Anum_pg_logging_appname,
-	Anum_pg_logging_database,
+	Anum_pg_logging_datid,
 	Anum_pg_logging_errno,
 	Anum_pg_logging_errcode,
 	Anum_pg_logging_message,
@@ -88,7 +95,9 @@ enum {
 	Anum_pg_logging_domain,
 	Anum_pg_logging_internalpos,
 	Anum_pg_logging_internalquery,
-	Anum_pg_logging_position,
+	Anum_pg_logging_userid,
+	Anum_pg_logging_backend_xid,
+	Anum_pg_logging_backend_xmin,
 
 	Natts_pg_logging_data
 };
