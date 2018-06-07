@@ -33,6 +33,7 @@ LoggingShmemHdr		   *hdr = NULL;
 bool					shmem_initialized = false;
 bool					buffer_increase_suggested = false;
 bool					logging_enabled = true;
+bool					hide_statements = false;
 
 static emit_log_hook_type		pg_logging_log_hook_next = NULL;
 static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
@@ -96,6 +97,16 @@ setup_gucs(void)
 		"Enable ring buffer for logs", NULL,
 		&logging_enabled,
 		true,
+		PGC_SUSET,
+		0,
+		NULL, NULL, NULL
+	);
+
+	DefineCustomBoolVariable(
+		"pg_logging.hide_statements",
+		"Hide lines with statements", NULL,
+		&hide_statements,
+		false,
 		PGC_SUSET,
 		0,
 		NULL, NULL, NULL
@@ -224,6 +235,9 @@ copy_error_data_to_shmem(ErrorData *edata)
 
 	/* don't allow recursive logs or quit if logs are disabled */
 	if (log_in_process || !logging_enabled)
+		return;
+
+	if (hide_statements && edata->hide_stmt)
 		return;
 
 	log_in_process = true;
