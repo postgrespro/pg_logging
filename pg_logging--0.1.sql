@@ -24,10 +24,10 @@ create type log_item as (
 	log_time			timestamp with time zone,
 	level				int,
 	pid					int,
-	line_num			bigint,
+	line_num			bigint,						/* log line number */
 	appname				text,
-	start_time			timestamp with time zone,
-	datid				Oid,
+	start_time			timestamp with time zone,	/* backend start time */
+	datid				oid,						/* database id */
 	errno				int,
 	errcode				int,
 	message				text,
@@ -39,11 +39,11 @@ create type log_item as (
 	domain				text,
 	internalpos			int,
 	internalquery		text,
-	userid				Oid,
+	userid				oid,
 	remote_host			text,
 	command_tag			text,
-	vxid				text,
-	txid				bigint,
+	vxid				text,						/* virtual transaction id */
+	txid				bigint,						/* transaction id */
 	query				text,
 	query_pos			int
 );
