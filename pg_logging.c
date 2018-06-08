@@ -506,7 +506,11 @@ _PG_init(void)
 	Size	segsize;
 
 	if (!process_shared_preload_libraries_in_progress)
-		return;
+	{
+		ereport(ERROR,
+				(errmsg("pg_logging module must be initialized in postmaster."),
+				 errhint("add pg_logging to shared_preload_libraries parameter in postgresql.conf")));
+	}
 
 	setup_gucs(true);
 	install_hooks();
