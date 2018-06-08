@@ -70,9 +70,15 @@ typedef struct LoggingShmemHdr
 	char			   *data;
 	volatile uint32		readpos;
 	volatile uint32		endpos;
-	int					buffer_size;	/* total size of buffer */
+	int					buffer_size;			/* total size of buffer */
+	int					buffer_size_initial;	/* initial size of buffer */
 	LWLock				hdr_lock;
 	bool				wraparound;
+
+	/* gucs */
+	bool				logging_enabled;
+	bool				ignore_statements;
+	bool				set_query_fields;
 } LoggingShmemHdr;
 
 struct ErrorLevel {
@@ -117,7 +123,7 @@ enum {
 extern struct ErrorLevel errlevel_wordlist[];
 extern LoggingShmemHdr	*hdr;
 
-void reset_counters_in_shmem(void);
+void reset_counters_in_shmem(int buffer_size);
 struct ErrorLevel *get_errlevel (register const char *str, register size_t len);
 
 #endif

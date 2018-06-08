@@ -39,7 +39,7 @@ get_errlevel_name(int code)
 }
 
 void
-reset_counters_in_shmem(void)
+reset_counters_in_shmem(int buffer_size)
 {
 	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 	hdr->endpos = 0;
@@ -51,7 +51,7 @@ reset_counters_in_shmem(void)
 Datum
 flush_logged_data(PG_FUNCTION_ARGS)
 {
-	reset_counters_in_shmem();
+	reset_counters_in_shmem(true);
 	PG_RETURN_VOID();
 }
 
