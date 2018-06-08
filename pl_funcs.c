@@ -158,6 +158,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		values[Anum_pg_logging_pid - 1] = Int32GetDatum(item->ppid);
 		values[Anum_pg_logging_line_num - 1] = Int64GetDatum(item->log_line_number);
 		values[Anum_pg_logging_internalpos - 1] = Int32GetDatum(item->internalpos);
+		values[Anum_pg_logging_query_pos - 1] = Int32GetDatum(item->query_pos);
 
 		if (TransactionIdIsValid(item->txid))
 			values[Anum_pg_logging_txid - 1] = TransactionIdGetDatum(item->txid);
@@ -193,8 +194,9 @@ do {															\
 		EXTRACT_VAL_TO(Anum_pg_logging_remote_host, item->remote_host_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_command_tag, item->command_tag_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_vxid, item->vxid_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_query, item->query_len);
 
-		/* Form output tuple */
+		/* form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);
 		pfree(item);
 

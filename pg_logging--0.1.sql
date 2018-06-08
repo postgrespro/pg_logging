@@ -43,7 +43,9 @@ create type log_item as (
 	remote_host			text,
 	command_tag			text,
 	vxid				text,
-	txid				bigint
+	txid				bigint,
+	query				text,
+	query_pos			int
 );
 
 create or replace function get_log(

@@ -43,6 +43,8 @@ typedef struct CollectedItem
 	int			remote_host_len;
 
 	/* query data */
+	int			query_len;
+	int			query_pos;
 	int			internalpos;
 	int			internalquery_len;
 
@@ -106,6 +108,8 @@ enum {
 	Anum_pg_logging_command_tag,
 	Anum_pg_logging_vxid,
 	Anum_pg_logging_txid,
+	Anum_pg_logging_query,
+	Anum_pg_logging_query_pos,
 
 	Natts_pg_logging_data
 };
