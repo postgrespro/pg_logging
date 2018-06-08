@@ -21,11 +21,12 @@ create cast (int AS error_level) without function as assignment;
 
 /* make sure this type is correlated with enum in pg_logging.h */
 create type log_item as (
-	logtime				timestamp with time zone,
+	log_time			timestamp with time zone,
 	level				int,
 	pid					int,
 	line_num			bigint,
 	appname				text,
+	start_time			timestamp with time zone,
 	datid				Oid,
 	errno				int,
 	errcode				int,
@@ -67,7 +68,7 @@ language c;
 /* create view to simplify usage of get_log function */
 create view pg_log as
 	select
-		logtime, datid, d.datname, level::error_level, errno, message, detail, hint
+		log_time, datid, d.datname, level::error_level, errno, message, detail, hint
 	from get_log(true) as l
 	left join pg_database as d on (l.datid = d.oid)
 	left join pg_authid as u on (l.userid = u.oid);

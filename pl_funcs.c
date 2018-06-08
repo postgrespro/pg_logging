@@ -145,6 +145,12 @@ get_logged_data(PG_FUNCTION_ARGS)
 		MemSet(isnull, 0, sizeof(isnull));
 
 		values[Anum_pg_logging_logtime - 1] = TimestampTzGetDatum(item->logtime);
+
+		if (item->session_start_time)
+			values[Anum_pg_logging_start_time - 1] = TimestampTzGetDatum(item->session_start_time);
+		else
+			isnull[Anum_pg_logging_start_time - 1] = true;
+
 		values[Anum_pg_logging_level - 1] = Int32GetDatum(item->elevel);
 		values[Anum_pg_logging_errno - 1] = Int32GetDatum(item->saved_errno);
 		values[Anum_pg_logging_errcode - 1] = Int32GetDatum(item->sqlerrcode);
@@ -172,7 +178,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 #define	EXTRACT_VAL_TO(attnum, len)								\
 do {															\
 	if (len) {													\
-		values[(attnum) - 1]	= CStringGetTextDatum(data);	\
+		text *ct = cstring_to_text_with_len(data, len);			\
+		values[(attnum) - 1] = PointerGetDatum(ct);				\
 		data += (len);											\
 	}															\
 	else isnull[(attnum) - 1] = true;							\

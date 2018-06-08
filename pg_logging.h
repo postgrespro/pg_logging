@@ -22,11 +22,14 @@ typedef struct CollectedItem
 #ifdef CHECK_DATA
 	int			magic;
 #endif
-	TimestampTz	logtime;
 	int			totallen;		/* size of this block */
+
+	TimestampTz	logtime;
+	TimestampTz session_start_time;
+
+	char		elevel;			/* error level */
 	int			saved_errno;	/* errno at entry */
 	int			sqlerrcode;		/* encoded ERRSTATE */
-	char		elevel;			/* error level */
 
 	/* text lengths in data block */
 	int			message_len;
@@ -85,6 +88,7 @@ enum {
 	Anum_pg_logging_pid,
 	Anum_pg_logging_line_num,
 	Anum_pg_logging_appname,
+	Anum_pg_logging_start_time,
 	Anum_pg_logging_datid,
 	Anum_pg_logging_errno,
 	Anum_pg_logging_errcode,

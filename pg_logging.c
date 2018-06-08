@@ -47,7 +47,7 @@ enum {
 	WRAP_FULL,
 };
 
-#define safe_strlen(s) ((s) ? strlen(s) + 1 : 0)
+#define safe_strlen(s) ((s) ? strlen(s) : 0)
 
 static void
 buffer_size_assign_hook(int newval, void *extra)
@@ -231,7 +231,6 @@ copy_error_data_to_shmem(ErrorData *edata)
 					savedpos;
 	const char	   *psdisp = NULL,
 				   *remote_host = NULL;
-	int				displen = 0;
 
 	/* don't allow recursive logs or quit if logs are disabled */
 	if (log_in_process || !logging_enabled)
@@ -257,6 +256,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 	item.log_line_number = ++log_line_number;
 	item.remote_host_len = 0;
 	item.command_tag_len = 0;
+	item.session_start_time = 0;
 
 	if (MyBackendId != InvalidBackendId && !IsAutoVacuumLauncherProcess() &&
 		!IsAutoVacuumWorkerProcess())
@@ -274,13 +274,19 @@ copy_error_data_to_shmem(ErrorData *edata)
 
 	if (MyProcPort)
 	{
+		int		displen = 0;
+
 		/* command tag */
 		psdisp = get_ps_display(&displen);
-		item.totallen += (item.command_tag_len = displen);
+		item.command_tag_len = displen;
+		item.totallen += item.command_tag_len;
 
 		/* remote host */
 		remote_host = MyProcPort->remote_host;
 		ADD_STRING(item.totallen, item.remote_host_len, remote_host);
+
+		/* session start time */
+		item.session_start_time = MyProcPort->SessionStartTime;
 	}
 
 	ADD_STRING(item.totallen, item.message_len, edata->message);
@@ -381,7 +387,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		data = add_block(data, edata->internalquery, item.internalquery_len);
 		data = add_block(data, application_name, item.appname_len);
 		data = add_block(data, remote_host, item.remote_host_len);
-		data = add_block(data, psdisp, displen);
+		data = add_block(data, psdisp, item.command_tag_len);
 
 		log_in_process = false;
 	}
