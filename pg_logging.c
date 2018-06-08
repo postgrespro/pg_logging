@@ -59,10 +59,7 @@ buffer_size_assign_hook(int newval, void *extra)
 	if (newval > hdr->buffer_size_initial)
 		elog(ERROR, "buffer size cannot be increased");
 
-	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
-	reset_counters_in_shmem(false);
-	hdr->buffer_size = newval;
-	LWLockRelease(&hdr->hdr_lock);
+	reset_counters_in_shmem(newval);
 }
 
 static bool

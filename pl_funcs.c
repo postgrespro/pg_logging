@@ -46,13 +46,16 @@ reset_counters_in_shmem(int buffer_size)
 	hdr->endpos = 0;
 	hdr->readpos = 0;
 	hdr->wraparound = false;
+	if (buffer_size > 0)
+		hdr->buffer_size = buffer_size;
+
 	LWLockRelease(&hdr->hdr_lock);
 }
 
 Datum
 flush_logged_data(PG_FUNCTION_ARGS)
 {
-	reset_counters_in_shmem(true);
+	reset_counters_in_shmem(0);
 	PG_RETURN_VOID();
 }
 

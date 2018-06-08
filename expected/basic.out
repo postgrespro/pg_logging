@@ -4,8 +4,6 @@ set log_statement=none;
 set pg_logging.buffer_position = 0;
 ERROR:  this parameter could not be changed
 set pg_logging.buffer_size = 2000;
-ERROR:  buffer size cannot be increased
-set pg_logging.buffer_size = 1;
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
@@ -18,10 +16,16 @@ select logging.flush_log();
  
 (1 row)
 
-select * from logging.pg_log;
- level | errno | message | detail | hint 
--------+-------+---------+--------+------
-       |       |         |        | 
+create view logs as
+	select level, line_num, appname, errno, errcode,
+			message, detail, detail_log, hint, context, context_domain,
+			domain, internalpos, internalquery, remote_host, command_tag,
+			query, query_pos
+	from logging.get_log();
+select * from logs;
+ level | line_num | appname | errno | errcode | message | detail | detail_log | hint | context | context_domain | domain | internalpos | internalquery | remote_host | command_tag | query | query_pos 
+-------+----------+---------+-------+---------+---------+--------+------------+------+---------+----------------+--------+-------------+---------------+-------------+-------------+-------+-----------
+       |          |         |       |         |         |        |            |      |         |                |        |             |               |             |             |       |          
 (1 row)
 
 select 1/0;
@@ -29,7 +33,7 @@ ERROR:  division by zero
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- endpos: 48, readpos: 0
+ endpos: 204, readpos: 0
 (1 row)
 
 select 'aaaaa'::int;
@@ -39,14 +43,14 @@ LINE 1: select 'aaaaa'::int;
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- endpos: 120, readpos: 0
+ endpos: 444, readpos: 0
 (1 row)
 
-select * from logging.get_log(true);
- level | errno |                  message                  | detail | hint | position 
--------+-------+-------------------------------------------+--------+------+----------
-    20 |     0 | division by zero                          |        |      |        0
-    20 |     0 | invalid input syntax for integer: "aaaaa" |        |      |       48
+select * from logs;
+ level | line_num |     appname      | errno | errcode  |                  message                  | detail | detail_log | hint | context | context_domain |   domain    | internalpos | internalquery | remote_host | command_tag |        query         | query_pos 
+-------+----------+------------------+-------+----------+-------------------------------------------+--------+------------+------+---------+----------------+-------------+-------------+---------------+-------------+-------------+----------------------+-----------
+    20 |        5 | pg_regress/basic |     0 | 33816706 | division by zero                          |        |            |      |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select 1/0;          |         0
+    20 |        6 | pg_regress/basic |     0 | 33685634 | invalid input syntax for integer: "aaaaa" |        |            |      |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select 'aaaaa'::int; |         8
 (2 rows)
 
 select repeat('aaaaaaaaa', 20)::int;
@@ -60,26 +64,28 @@ ERROR:  invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 show pg_logging.buffer_position;
  pg_logging.buffer_position 
 ----------------------------
- endpos: 88, readpos: 120
+ endpos: 2156, readpos: 444
 (1 row)
 
-select * from logging.get_log(true);
- level | errno |                                                                                                         message                                                                                                          | detail | hint | position 
--------+-------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+------+----------
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      120
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      368
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      616
-    20 |     0 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |      |      864
+select * from logs;
+ level | line_num |     appname      | errno | errcode  |                                                                                                         message                                                                                                          | detail | detail_log | hint | context | context_domain |   domain    | internalpos | internalquery | remote_host | command_tag |                query                 | query_pos 
+-------+----------+------------------+-------+----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+------------+------+---------+----------------+-------------+-------------+---------------+-------------+-------------+--------------------------------------+-----------
+    20 |        7 | pg_regress/basic |     0 | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+    20 |        8 | pg_regress/basic |     0 | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+    20 |        9 | pg_regress/basic |     0 | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+    20 |       10 | pg_regress/basic |     0 | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
 (4 rows)
 
 select logging.test_ereport('error', 'one', 'two', 'three');
 ERROR:  one
 DETAIL:  two
 HINT:  three
-select * from logging.get_log(true);
- level | errno | message | detail | hint  | position 
--------+-------+---------+--------+-------+----------
-    20 |     0 | one     | two    | three |       88
+select * from logs;
+ level | line_num |     appname      | errno | errcode | message | detail | detail_log | hint  | context | context_domain |   domain    | internalpos | internalquery | remote_host | command_tag |                            query                             | query_pos 
+-------+----------+------------------+-------+---------+---------+--------+------------+-------+---------+----------------+-------------+-------------+---------------+-------------+-------------+--------------------------------------------------------------+-----------
+    20 |       11 | pg_regress/basic |     0 |    1088 | one     | two    |            | three |         | postgres-11    | postgres-11 |           0 |               | [local]     | SELECT      | select logging.test_ereport('error', 'one', 'two', 'three'); |         0
 (1 row)
 
-drop extension pg_logging;
+reset log_statement;
+drop extension pg_logging cascade;
+NOTICE:  drop cascades to view logs
