@@ -54,8 +54,8 @@ typedef struct CollectedItem
 	uint64		log_line_number;
 
 	/* transaction info */
-	TransactionId	backend_xid;
-	TransactionId	backend_xmin;
+	int				vxid_len;
+	TransactionId	txid;
 
 	/* texts are contained here */
 	char		data[FLEXIBLE_ARRAY_MEMBER];
@@ -102,10 +102,10 @@ enum {
 	Anum_pg_logging_internalpos,
 	Anum_pg_logging_internalquery,
 	Anum_pg_logging_userid,
-	Anum_pg_logging_backend_xid,
-	Anum_pg_logging_backend_xmin,
 	Anum_pg_logging_remote_host,
 	Anum_pg_logging_command_tag,
+	Anum_pg_logging_vxid,
+	Anum_pg_logging_txid,
 
 	Natts_pg_logging_data
 };

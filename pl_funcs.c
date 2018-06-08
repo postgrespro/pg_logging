@@ -159,15 +159,10 @@ get_logged_data(PG_FUNCTION_ARGS)
 		values[Anum_pg_logging_line_num - 1] = Int64GetDatum(item->log_line_number);
 		values[Anum_pg_logging_internalpos - 1] = Int32GetDatum(item->internalpos);
 
-		if (TransactionIdIsValid(item->backend_xid))
-			values[Anum_pg_logging_backend_xid - 1] = TransactionIdGetDatum(item->backend_xid);
+		if (TransactionIdIsValid(item->txid))
+			values[Anum_pg_logging_txid - 1] = TransactionIdGetDatum(item->txid);
 		else
-			isnull[Anum_pg_logging_backend_xid - 1] = true;
-
-		if (TransactionIdIsValid(item->backend_xmin))
-			values[Anum_pg_logging_backend_xmin - 1] = TransactionIdGetDatum(item->backend_xmin);
-		else
-			isnull[Anum_pg_logging_backend_xmin - 1] = true;
+			isnull[Anum_pg_logging_txid - 1] = true;
 
 		if (OidIsValid(item->user_id))
 			values[Anum_pg_logging_userid - 1] = ObjectIdGetDatum(item->user_id);
@@ -197,6 +192,7 @@ do {															\
 		EXTRACT_VAL_TO(Anum_pg_logging_appname, item->appname_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_remote_host, item->remote_host_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_command_tag, item->command_tag_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_vxid, item->vxid_len);
 
 		/* Form output tuple */
 		htup = heap_form_tuple(funccxt->tuple_desc, values, isnull);

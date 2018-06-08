@@ -5,18 +5,19 @@
  * Copyright (c) 2018, Postgres Professional
  */
 #include "postgres.h"
+#include "access/xact.h"
 #include "fmgr.h"
+#include "libpq/libpq-be.h"
 #include "miscadmin.h"
+#include "postmaster/autovacuum.h"
 #include "storage/dsm.h"
+#include "storage/ipc.h"
 #include "storage/shm_mq.h"
 #include "storage/shm_toc.h"
-#include "storage/ipc.h"
 #include "string.h"
-#include "utils/guc.h"
 #include "utils/builtins.h"
-#include "libpq/libpq-be.h"
+#include "utils/guc.h"
 #include "utils/ps_status.h"
-#include "postmaster/autovacuum.h"
 
 #include "pg_logging.h"
 
@@ -231,6 +232,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 					savedpos;
 	const char	   *psdisp = NULL,
 				   *remote_host = NULL;
+	char			vxidbuf[128];
 
 	/* don't allow recursive logs or quit if logs are disabled */
 	if (log_in_process || !logging_enabled)
@@ -264,12 +266,15 @@ copy_error_data_to_shmem(ErrorData *edata)
 	else
 		item.user_id = InvalidOid;
 
-	/* transaction info */
-	if (MyProc != NULL)
+	/* transaction */
+	item.txid = GetTopTransactionIdIfAny();
+	item.vxid_len = 0;
+
+	if (MyProc != NULL && MyProc->backendId != InvalidBackendId)
 	{
-		PGXACT	   *xact = &ProcGlobal->allPgXact[MyProc->pgprocno];
-		item.backend_xid = xact->xid;
-		item.backend_xmin = xact->xmin;
+		snprintf(vxidbuf, sizeof(vxidbuf) - 1, "%d/%u",
+					MyProc->backendId, MyProc->lxid);
+		item.totallen += (item.vxid_len = strlen(vxidbuf));
 	}
 
 	if (MyProcPort)
@@ -388,6 +393,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		data = add_block(data, application_name, item.appname_len);
 		data = add_block(data, remote_host, item.remote_host_len);
 		data = add_block(data, psdisp, item.command_tag_len);
+		data = add_block(data, vxidbuf, item.vxid_len);
 
 		log_in_process = false;
 	}
