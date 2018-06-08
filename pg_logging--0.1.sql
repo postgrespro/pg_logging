@@ -66,11 +66,3 @@ create or replace function test_ereport(
 )
 returns void as 'MODULE_PATHNAME', 'test_ereport'
 language c;
-
-/* create view to simplify usage of get_log function */
-create view pg_log as
-	select
-		log_time, datid, d.datname, level::error_level, errno, message, detail, hint
-	from get_log(true) as l
-	left join pg_database as d on (l.datid = d.oid)
-	left join pg_authid as u on (l.userid = u.oid);

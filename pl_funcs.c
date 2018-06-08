@@ -22,6 +22,7 @@ PG_FUNCTION_INFO_V1( errlevel_eq );
 
 typedef struct {
 	uint32		until;
+	uint32		reading_pos;
 	bool		wraparound;
 } logged_data_ctx;
 
@@ -62,6 +63,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 	FuncCallContext	   *funccxt;
 	logged_data_ctx	   *usercxt;
 
+	bool	flush = PG_GETARG_BOOL(0);
+
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
@@ -77,6 +80,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = hdr->endpos;
+		usercxt->reading_pos = hdr->readpos;
 		usercxt->wraparound = hdr->wraparound;
 		hdr->wraparound = false;
 
@@ -94,8 +98,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 	pg_read_barrier();
 
-	while ((!usercxt->wraparound && hdr->readpos < usercxt->until) ||
-			(usercxt->wraparound && hdr->readpos > usercxt->until))
+	while ((!usercxt->wraparound && usercxt->reading_pos < usercxt->until) ||
+			(usercxt->wraparound && usercxt->reading_pos > usercxt->until))
 	{
 		CollectedItem  *item;
 		char		   *data;
@@ -103,14 +107,14 @@ get_logged_data(PG_FUNCTION_ARGS)
 		Datum			values[Natts_pg_logging_data];
 		bool			isnull[Natts_pg_logging_data];
 
-		if (hdr->readpos + ITEM_HDR_LEN > hdr->buffer_size)
+		if (usercxt->reading_pos + ITEM_HDR_LEN > hdr->buffer_size)
 		{
-			hdr->readpos = 0;
+			usercxt->reading_pos = 0;
 			usercxt->wraparound = false;
 			continue;
 		}
 
-		data = (char *) (hdr->data + hdr->readpos);
+		data = (char *) (hdr->data + usercxt->reading_pos);
 		AssertPointerAlignment(data, 4);
 
 		/*
@@ -124,21 +128,21 @@ get_logged_data(PG_FUNCTION_ARGS)
 		memcpy(item, data, offsetof(CollectedItem, data));
 		data += ITEM_HDR_LEN;
 
-		if (hdr->readpos + item->totallen >= hdr->buffer_size)
+		if (usercxt->reading_pos + item->totallen >= hdr->buffer_size)
 		{
 			/* two parts */
-			int	taillen = hdr->buffer_size - hdr->readpos - ITEM_HDR_LEN;
+			int	taillen = hdr->buffer_size - usercxt->reading_pos - ITEM_HDR_LEN;
 			memcpy(item->data, data, taillen);
 			usercxt->wraparound = false;
-			hdr->readpos += item->totallen;
-			hdr->readpos = hdr->readpos - hdr->buffer_size;
-			memcpy(item->data + taillen, hdr->data, hdr->readpos);
+			usercxt->reading_pos += item->totallen;
+			usercxt->reading_pos = usercxt->reading_pos - hdr->buffer_size;
+			memcpy(item->data + taillen, hdr->data, usercxt->reading_pos);
 		}
 		else
 		{
 			/* one part */
 			memcpy(item->data, data, item->totallen - ITEM_HDR_LEN);
-			hdr->readpos += item->totallen;
+			usercxt->reading_pos += item->totallen;
 		}
 
 		MemSet(values, 0, sizeof(values));
@@ -202,6 +206,9 @@ do {															\
 
 		SRF_RETURN_NEXT(funccxt, HeapTupleGetDatum(htup));
 	}
+
+	if (flush)
+		hdr->readpos = usercxt->reading_pos;
 
 	LWLockRelease(&hdr->hdr_lock);
 	SRF_RETURN_DONE(funccxt);
