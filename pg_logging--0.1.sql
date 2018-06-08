@@ -49,7 +49,7 @@ create type log_item as (
 );
 
 create or replace function get_log(
-	flush	bool	/* always true for now */
+	flush bool default true
 )
 returns log_item as 'MODULE_PATHNAME', 'get_logged_data'
 language c;
