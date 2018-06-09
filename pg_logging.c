@@ -205,8 +205,7 @@ push_reading_position(int readpos, bool *wrapped)
 		*wrapped = true;
 
 #ifdef CHECK_DATA
-		item = (CollectedItem *) hdr->data;
-		Assert(item->magic == PG_ITEM_MAGIC);
+		Assert(((CollectedItem *) hdr->data)->magic == PG_ITEM_MAGIC);
 #endif
 
 	}
@@ -419,8 +418,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		data = add_block(data, remote_host, item.remote_host_len);
 		data = add_block(data, psdisp, item.command_tag_len);
 		data = add_block(data, vxidbuf, item.vxid_len);
-		data = add_block(data, debug_query_string, item.query_len);
-
+		add_block(data, debug_query_string, item.query_len);
 		log_in_process = false;
 	}
 }

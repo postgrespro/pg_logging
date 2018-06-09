@@ -31,7 +31,7 @@ typedef struct CollectedItem
 	TimestampTz	logtime;
 	TimestampTz session_start_time;
 
-	char		elevel;			/* error level */
+	int			elevel;			/* error level */
 	int			saved_errno;	/* errno at entry */
 	int			sqlerrcode;		/* encoded ERRSTATE */
 

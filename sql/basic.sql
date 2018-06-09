@@ -8,7 +8,7 @@ set pg_logging.buffer_size = 2000;
 select logging.flush_log();
 
 create view logs as
-	select level, line_num, appname, errno, errcode,
+	select level, appname, errcode,
 			message, detail, detail_log, hint, context,
 			domain, internalpos, internalquery, remote_host, command_tag,
 			query, query_pos
