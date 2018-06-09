@@ -6,3 +6,4 @@
 regression.diffs
 regression.out
 *.plist
+Dockerfile
