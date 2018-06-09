@@ -8,6 +8,7 @@ DATA = pg_logging--0.1.sql
 PGFILEDESC = "PostgreSQL logging interface"
 
 REGRESS = basic
+EXTRA_REGRESS_OPTS=--temp-config=$(CURDIR)/conf.add
 
 ifndef PG_CONFIG
 PG_CONFIG = pg_config
