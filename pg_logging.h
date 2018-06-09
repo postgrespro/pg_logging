@@ -8,6 +8,10 @@
 
 #define CHECK_DATA
 
+#if PG_VERSION_NUM < 90600
+#error "pg_logging support only postgres starting from 9.6"
+#endif
+
 typedef enum ItemObjectType {
 	IOT_NONE,
 	IOT_TABLE,
@@ -72,7 +76,7 @@ typedef struct LoggingShmemHdr
 	volatile uint32		endpos;
 	int					buffer_size;			/* total size of buffer */
 	int					buffer_size_initial;	/* initial size of buffer */
-	LWLock				hdr_lock;
+	LWLockPadded		hdr_lock;
 	bool				wraparound;
 
 	/* gucs */
@@ -80,6 +84,9 @@ typedef struct LoggingShmemHdr
 	bool				ignore_statements;
 	bool				set_query_fields;
 } LoggingShmemHdr;
+
+#define HDR_LOCK() 	( LWLockAcquire(&hdr->hdr_lock.lock, LW_EXCLUSIVE) )
+#define HDR_RELEASE() (	LWLockRelease(&hdr->hdr_lock.lock) )
 
 struct ErrorLevel {
 	char   *text;

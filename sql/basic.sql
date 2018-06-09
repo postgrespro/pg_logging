@@ -4,7 +4,6 @@ create extension pg_logging schema logging;
 set log_statement=none;
 set pg_logging.buffer_position = 0;
 set pg_logging.buffer_size = 2000;
-show pg_logging.buffer_position;
 
 select logging.flush_log();
 
@@ -18,16 +17,13 @@ create view logs as
 select * from logs;
 
 select 1/0;
-show pg_logging.buffer_position;
 select 'aaaaa'::int;
-show pg_logging.buffer_position;
 select * from logs;
 
 select repeat('aaaaaaaaa', 20)::int;
 select repeat('aaaaaaaaa', 20)::int;
 select repeat('aaaaaaaaa', 20)::int;
 select repeat('aaaaaaaaa', 20)::int;
-show pg_logging.buffer_position;
 select * from logs;
 
 select logging.test_ereport('error', 'one', 'two', 'three');

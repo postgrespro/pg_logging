@@ -6,10 +6,15 @@
  */
 #include "postgres.h"
 #include "tsearch/ts_locale.h"
-#include "catalog/pg_type_d.h"
 #include "funcapi.h"
 #include "utils/builtins.h"
 #include "access/htup_details.h"
+
+#if PG_VERSION_NUM >= 110000
+#include "catalog/pg_type_d.h"
+#else
+#include "catalog/pg_type.h"
+#endif
 
 #include "pg_logging.h"
 
@@ -42,14 +47,13 @@ get_errlevel_name(int code)
 void
 reset_counters_in_shmem(int buffer_size)
 {
-	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+	HDR_LOCK();
 	hdr->endpos = 0;
 	hdr->readpos = 0;
 	hdr->wraparound = false;
 	if (buffer_size > 0)
 		hdr->buffer_size = buffer_size;
-
-	LWLockRelease(&hdr->hdr_lock);
+	HDR_RELEASE();
 }
 
 Datum
@@ -80,7 +84,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		 * Reader will block only other readers if it's fast enough.
 		 * Writer could take this lock if readpos wasn't changed.
 		 */
-		LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+		HDR_LOCK();
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = hdr->endpos;
 		usercxt->reading_pos = hdr->readpos;
@@ -213,7 +217,7 @@ do {															\
 	if (flush)
 		hdr->readpos = usercxt->reading_pos;
 
-	LWLockRelease(&hdr->hdr_lock);
+	HDR_RELEASE();
 	SRF_RETURN_DONE(funccxt);
 }
 

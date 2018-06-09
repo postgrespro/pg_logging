@@ -41,6 +41,12 @@ static shmem_startup_hook_type	pg_logging_shmem_hook_next = NULL;
 static void pg_logging_log_hook(ErrorData *edata);
 static void	pg_logging_shmem_hook(void);
 
+#if PG_VERSION_NUM < 100000
+#define USE_STATIC_TRANCHE
+LWLockPadded *lwlock_array[1] = {NULL};
+static LWLockTranche LoggingLWLockTranche = {"pg_logging", lwlock_array, sizeof(LWLockPadded)};
+#endif
+
 enum {
 	WRAP_NONE,
 	WRAP_PARTIAL,
@@ -101,7 +107,7 @@ setup_gucs(bool basic)
 			0,
 			INT_MAX,	/* 512MB should be enough for everyone */
 			PGC_SUSET,
-			GUC_UNIT_BYTE,
+			GUC_UNIT_MEMORY,
 			buffer_position_check_hook, NULL, buffer_position_show_hook
 		);
 	}
@@ -221,8 +227,7 @@ push_reading_position(int readpos, bool *wrapped)
 	}
 	if (!buffer_increase_suggested)
 	{
-		fprintf(stderr, "CONSIDER INCREASING PG_LOGGING BUFFER, READPOS MOVED TO: %d\n",
-				readpos);
+		fprintf(stderr, "CONSIDER INCREASING PG_LOGGING BUFFER");
 		buffer_increase_suggested = true;
 	}
 
@@ -336,7 +341,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 	 * We use reading position here from written data and have to use lock.
 	 * Also reading position will be moved forward if needed.
 	 */
-	LWLockAcquire(&hdr->hdr_lock, LW_EXCLUSIVE);
+	HDR_LOCK();
 	savedpos = curpos = hdr->endpos;
 
 	if (savedpos + ITEM_HDR_LEN > hdr->buffer_size)
@@ -386,8 +391,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 			}
 		}
 	}
-
-	LWLockRelease(&hdr->hdr_lock);
+	HDR_RELEASE();
 
 	if (hdr->endpos >= savedpos && hdr->endpos < endpos)
 	{
@@ -469,8 +473,13 @@ pg_logging_shmem_hook(void)
 		hdr->readpos = 0;
 
 		/* initialize buffer lwlock */
+#ifdef USE_STATIC_TRANCHE
+		lwlock_array[0] = &hdr->hdr_lock;
+		LWLockRegisterTranche(tranche_id, &LoggingLWLockTranche);
+#else
 		LWLockRegisterTranche(tranche_id, "pg_logging tranche");
-		LWLockInitialize(&hdr->hdr_lock, tranche_id);
+#endif
+		LWLockInitialize(&hdr->hdr_lock.lock, tranche_id);
 
 		shm_toc_insert(toc, 0, hdr);
 		hdr->data = shm_toc_allocate(toc, hdr->buffer_size);
