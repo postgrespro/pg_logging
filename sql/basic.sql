@@ -9,7 +9,7 @@ select logging.flush_log();
 
 create view logs as
 	select level, line_num, appname, errno, errcode,
-			message, detail, detail_log, hint, context, context_domain,
+			message, detail, detail_log, hint, context,
 			domain, internalpos, internalquery, remote_host, command_tag,
 			query, query_pos
 	from logging.get_log();
