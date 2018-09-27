@@ -2,7 +2,6 @@ create schema logging;
 create extension pg_logging schema logging;
 
 set log_statement=none;
-set pg_logging.buffer_position = 0;
 set pg_logging.buffer_size = 2000;
 
 select logging.flush_log();
