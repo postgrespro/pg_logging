@@ -5,7 +5,6 @@
  * Copyright (c) 2018, Postgres Professional
  */
 #include "postgres.h"
-#include "tsearch/ts_locale.h"
 #include "funcapi.h"
 #include "utils/builtins.h"
 #include "access/htup_details.h"
@@ -237,6 +236,20 @@ Datum
 errlevel_out(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_CSTRING(get_errlevel_name(PG_GETARG_INT32(0)));
+}
+
+static char *
+lowerstr(char *str)
+{
+	int		i;
+	char   *res = pstrdup(str);
+
+	for (i = 0; str[i]; i++)
+	{
+		res[i] = tolower(str[i]);
+	}
+
+	return res;
 }
 
 Datum
