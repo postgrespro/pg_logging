@@ -1,8 +1,6 @@
 create schema logging;
 create extension pg_logging schema logging;
 set log_statement=none;
-set pg_logging.buffer_position = 0;
-ERROR:  this parameter could not be changed
 set pg_logging.buffer_size = 2000;
 select logging.flush_log();
  flush_log 
@@ -13,13 +11,19 @@ select logging.flush_log();
 create view logs as
 	select level, appname, errcode,
 			message, detail, detail_log, hint, context,
-			domain, internalpos, internalquery, remote_host, command_tag,
+			errstate, internalpos, internalquery, remote_host, command_tag,
+			query, query_pos
+	from logging.get_log();
+create view logs2 as
+	select level::logging.error_level, appname, errcode,
+			message, detail, detail_log, hint, context,
+			errstate, internalpos, internalquery, remote_host, command_tag,
 			query, query_pos
 	from logging.get_log();
 select * from logs;
- level | appname | errcode | message | detail | detail_log | hint | context | domain | internalpos | internalquery | remote_host | command_tag | query | query_pos 
--------+---------+---------+---------+--------+------------+------+---------+--------+-------------+---------------+-------------+-------------+-------+-----------
-       |         |         |         |        |            |      |         |        |             |               |             |             |       |          
+ level | appname | errcode | message | detail | detail_log | hint | context | errstate | internalpos | internalquery | remote_host | command_tag | query | query_pos 
+-------+---------+---------+---------+--------+------------+------+---------+----------+-------------+---------------+-------------+-------------+-------+-----------
+       |         |         |         |        |            |      |         |          |             |               |             |             |       |          
 (1 row)
 
 select 1/0;
@@ -29,10 +33,10 @@ ERROR:  invalid input syntax for integer: "aaaaa"
 LINE 1: select 'aaaaa'::int;
                ^
 select * from logs;
- level |  appname   | errcode  |                  message                  | detail | detail_log | hint | context |    domain    | internalpos | internalquery | remote_host | command_tag |        query         | query_pos 
--------+------------+----------+-------------------------------------------+--------+------------+------+---------+--------------+-------------+---------------+-------------+-------------+----------------------+-----------
-    20 | pg_regress | 33816706 | division by zero                          |        |            |      |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select 1/0;          |         0
-    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaa" |        |            |      |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select 'aaaaa'::int; |         8
+ level |  appname   | errcode  |                  message                  | detail | detail_log | hint | context | errstate | internalpos | internalquery | remote_host | command_tag |        query         | query_pos 
+-------+------------+----------+-------------------------------------------+--------+------------+------+---------+----------+-------------+---------------+-------------+-------------+----------------------+-----------
+    20 | pg_regress | 33816706 | division by zero                          |        |            |      |         | 22012    |           0 |               | [local]     | SELECT      | select 1/0;          |         0
+    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaa" |        |            |      |         | 22P02    |           0 |               | [local]     | SELECT      | select 'aaaaa'::int; |         8
 (2 rows)
 
 select repeat('aaaaaaaaa', 20)::int;
@@ -44,24 +48,26 @@ ERROR:  invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 select repeat('aaaaaaaaa', 20)::int;
 ERROR:  invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 select * from logs;
- level |  appname   | errcode  |                                                                                                         message                                                                                                          | detail | detail_log | hint | context |    domain    | internalpos | internalquery | remote_host | command_tag |                query                 | query_pos 
--------+------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+------------+------+---------+--------------+-------------+---------------+-------------+-------------+--------------------------------------+-----------
-    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
-    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
-    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
-    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+ level |  appname   | errcode  |                                                                                                         message                                                                                                          | detail | detail_log | hint | context | errstate | internalpos | internalquery | remote_host | command_tag |                query                 | query_pos 
+-------+------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+------------+------+---------+----------+-------------+---------------+-------------+-------------+--------------------------------------+-----------
+    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | 22P02    |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | 22P02    |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | 22P02    |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
+    20 | pg_regress | 33685634 | invalid input syntax for integer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" |        |            |      |         | 22P02    |           0 |               | [local]     | SELECT      | select repeat('aaaaaaaaa', 20)::int; |         0
 (4 rows)
 
 select logging.test_ereport('error', 'one', 'two', 'three');
 ERROR:  one
 DETAIL:  two
 HINT:  three
-select * from logs;
- level |  appname   | errcode | message | detail | detail_log | hint  | context |    domain    | internalpos | internalquery | remote_host | command_tag |                            query                             | query_pos 
--------+------------+---------+---------+--------+------------+-------+---------+--------------+-------------+---------------+-------------+-------------+--------------------------------------------------------------+-----------
-    20 | pg_regress |    1088 | one     | two    |            | three |         | postgres-9.6 |           0 |               | [local]     | SELECT      | select logging.test_ereport('error', 'one', 'two', 'three'); |         0
+select * from logs2;
+ level |  appname   | errcode | message | detail | detail_log | hint  | context | errstate | internalpos | internalquery | remote_host | command_tag |                            query                             | query_pos 
+-------+------------+---------+---------+--------+------------+-------+---------+----------+-------------+---------------+-------------+-------------+--------------------------------------------------------------+-----------
+ error | pg_regress |    1088 | one     | two    |            | three |         | 0A000    |           0 |               | [local]     | SELECT      | select logging.test_ereport('error', 'one', 'two', 'three'); |         0
 (1 row)
 
 reset log_statement;
 drop extension pg_logging cascade;
-NOTICE:  drop cascades to view logs
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to view logs
+drop cascades to view logs2

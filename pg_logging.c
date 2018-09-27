@@ -262,8 +262,13 @@ copy_error_data_to_shmem(ErrorData *edata)
 
 	if (MyProc != NULL && MyProc->backendId != InvalidBackendId)
 	{
-		snprintf(vxidbuf, sizeof(vxidbuf) - 1, "%d/%" PRIu64,
+#ifdef XID_FMT
+		snprintf(vxidbuf, sizeof(vxidbuf) - 1, "%d/" XID_FMT,
 					MyProc->backendId, MyProc->lxid);
+#else
+		snprintf(vxidbuf, sizeof(vxidbuf) - 1, "%d/%u",
+					MyProc->backendId, MyProc->lxid);
+#endif
 		item.totallen += (item.vxid_len = strlen(vxidbuf));
 	}
 
