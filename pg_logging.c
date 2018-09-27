@@ -289,7 +289,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 
 	if (MyProc != NULL && MyProc->backendId != InvalidBackendId)
 	{
-		snprintf(vxidbuf, sizeof(vxidbuf) - 1, "%d/%u",
+		snprintf(vxidbuf, sizeof(vxidbuf) - 1, "%d/%" PRIu64,
 					MyProc->backendId, MyProc->lxid);
 		item.totallen += (item.vxid_len = strlen(vxidbuf));
 	}
@@ -328,6 +328,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 	ADD_STRING(item.totallen, item.context_domain_len, edata->context_domain);
 	ADD_STRING(item.totallen, item.appname_len, application_name);
 	ADD_STRING(item.totallen, item.internalquery_len, edata->internalquery);
+	ADD_STRING(item.totallen, item.errstate_len, unpack_sql_state(edata->sqlerrcode));
 	item.totallen = INTALIGN(item.totallen);
 
 	/*
@@ -405,7 +406,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		memcpy(data, &item, ITEM_HDR_LEN);
 		data += ITEM_HDR_LEN;
 
-		/* ordering is important !!! */
+		/* ordering is important, look pl_funcs.c  !!! */
 		data = add_block(data, edata->message, item.message_len);
 		data = add_block(data, edata->detail, item.detail_len);
 		data = add_block(data, edata->detail_log, item.detail_log_len);
@@ -414,6 +415,7 @@ copy_error_data_to_shmem(ErrorData *edata)
 		data = add_block(data, edata->domain, item.domain_len);
 		data = add_block(data, edata->context_domain, item.context_domain_len);
 		data = add_block(data, edata->internalquery, item.internalquery_len);
+		data = add_block(data, unpack_sql_state(edata->sqlerrcode), item.errstate_len);
 		data = add_block(data, application_name, item.appname_len);
 		data = add_block(data, remote_host, item.remote_host_len);
 		data = add_block(data, psdisp, item.command_tag_len);

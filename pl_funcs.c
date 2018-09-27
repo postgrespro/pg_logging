@@ -192,7 +192,7 @@ do {															\
 	else isnull[(attnum) - 1] = true;							\
 } while (0);
 
-		/* ordering is important !! */
+		/* ordering is important, look pg_logging.c !! */
 		EXTRACT_VAL_TO(Anum_pg_logging_message, item->message_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_detail, item->detail_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_detail_log, item->detail_log_len);
@@ -201,6 +201,7 @@ do {															\
 		EXTRACT_VAL_TO(Anum_pg_logging_domain, item->domain_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_context_domain, item->context_domain_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_internalquery, item->internalquery_len);
+		EXTRACT_VAL_TO(Anum_pg_logging_errstate, item->errstate_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_appname, item->appname_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_remote_host, item->remote_host_len);
 		EXTRACT_VAL_TO(Anum_pg_logging_command_tag, item->command_tag_len);

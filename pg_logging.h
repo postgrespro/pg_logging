@@ -45,6 +45,7 @@ typedef struct CollectedItem
 	int			context_domain_len;
 	int			command_tag_len;
 	int			remote_host_len;
+	int			errstate_len;
 
 	/* query data */
 	int			query_len;
@@ -107,6 +108,7 @@ enum {
 	Anum_pg_logging_datid,
 	Anum_pg_logging_errno,
 	Anum_pg_logging_errcode,
+	Anum_pg_logging_errstate,
 	Anum_pg_logging_message,
 	Anum_pg_logging_detail,
 	Anum_pg_logging_detail_log,

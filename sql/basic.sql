@@ -10,7 +10,14 @@ select logging.flush_log();
 create view logs as
 	select level, appname, errcode,
 			message, detail, detail_log, hint, context,
-			domain, internalpos, internalquery, remote_host, command_tag,
+			errstate, internalpos, internalquery, remote_host, command_tag,
+			query, query_pos
+	from logging.get_log();
+
+create view logs2 as
+	select level::logging.error_level, appname, errcode,
+			message, detail, detail_log, hint, context,
+			errstate, internalpos, internalquery, remote_host, command_tag,
 			query, query_pos
 	from logging.get_log();
 
@@ -27,7 +34,7 @@ select repeat('aaaaaaaaa', 20)::int;
 select * from logs;
 
 select logging.test_ereport('error', 'one', 'two', 'three');
-select * from logs;
+select * from logs2;
 
 reset log_statement;
 drop extension pg_logging cascade;

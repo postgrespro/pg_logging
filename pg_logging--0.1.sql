@@ -30,6 +30,7 @@ create type log_item as (
 	datid				oid,						/* database id */
 	errno				int,
 	errcode				int,
+	errstate			text,
 	message				text,
 	detail				text,
 	detail_log			text,
