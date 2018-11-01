@@ -17,7 +17,7 @@ endif
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-errlevel.c: errlevel.gperf
+errlevel.c:
 	gperf errlevel.gperf --null-strings --global-table --output-file=errlevel.c --word-array-name=errlevel_wordlist
 	sed -i.bak -e 's/static struct ErrorLevel errlevel_wordlist/struct ErrorLevel errlevel_wordlist/g' errlevel.c
 	rm errlevel.c.bak
