@@ -1,5 +1,5 @@
 [![Build Status](https://travis-ci.org/postgrespro/pg_logging.svg?branch=master)](https://travis-ci.org/postgrespro/pg_logging)
-[![GitHub license](https://img.shields.io/badge/license-PostgreSQL-blue.svg)](https://raw.githubusercontent.com/postgrespro/pg_wait_sampling/master/LICENSE)
+[![GitHub license](https://img.shields.io/badge/license-PostgreSQL-blue.svg)](https://raw.githubusercontent.com/postgrespro/pg_logging/master/LICENSE)
 
 pg_logging
 =================
