@@ -66,6 +66,85 @@ select * from logs2;
  error | pg_regress |    1088 | one     | two    |            | three |         | 0A000    |           0 |               | [local]     | SELECT      | select logging.test_ereport('error', 'one', 'two', 'three'); |         0
 (1 row)
 
+/* cleanup */
+select logging.flush_log();
+ flush_log 
+-----------
+ 
+(1 row)
+
+show pg_logging.minlevel;
+ pg_logging.minlevel 
+---------------------
+ none
+(1 row)
+
+set pg_logging.minlevel = error;
+select logging.test_ereport('error', 'notice1', 'detail', 'hint');
+ERROR:  notice1
+DETAIL:  detail
+HINT:  hint
+select logging.test_ereport('error', 'notice2', 'detail', 'hint');
+ERROR:  notice2
+DETAIL:  detail
+HINT:  hint
+select logging.test_ereport('error', 'notice3', 'detail', 'hint');
+ERROR:  notice3
+DETAIL:  detail
+HINT:  hint
+select level, message, position from logging.get_log(false);
+ level | message | position 
+-------+---------+----------
+    20 | notice1 |        0
+    20 | notice2 |      268
+    20 | notice3 |      536
+(3 rows)
+
+select level, message, position from logging.get_log(272);
+NOTICE:  nothing with specified position was found
+ level | message | position 
+-------+---------+----------
+       |         |         
+(1 row)
+
+select level, message, position from logging.get_log(false);
+ level | message | position 
+-------+---------+----------
+    20 | notice1 |        0
+    20 | notice2 |      268
+    20 | notice3 |      536
+(3 rows)
+
+select level, message, position from logging.get_log(544);
+NOTICE:  nothing with specified position was found
+ level | message | position 
+-------+---------+----------
+       |         |         
+(1 row)
+
+select level, message, position from logging.get_log(false);
+ level | message | position 
+-------+---------+----------
+    20 | notice1 |        0
+    20 | notice2 |      268
+    20 | notice3 |      536
+(3 rows)
+
+select level, message, position from logging.get_log(1000);
+NOTICE:  nothing with specified position was found
+ level | message | position 
+-------+---------+----------
+       |         |         
+(1 row)
+
+select level, message, position from logging.get_log(false);
+ level | message | position 
+-------+---------+----------
+    20 | notice1 |        0
+    20 | notice2 |      268
+    20 | notice3 |      536
+(3 rows)
+
 reset log_statement;
 drop extension pg_logging cascade;
 NOTICE:  drop cascades to 2 other objects

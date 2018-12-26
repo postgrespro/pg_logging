@@ -35,5 +35,22 @@ select * from logs;
 select logging.test_ereport('error', 'one', 'two', 'three');
 select * from logs2;
 
+/* cleanup */
+select logging.flush_log();
+
+show pg_logging.minlevel;
+set pg_logging.minlevel = error;
+
+select logging.test_ereport('error', 'notice1', 'detail', 'hint');
+select logging.test_ereport('error', 'notice2', 'detail', 'hint');
+select logging.test_ereport('error', 'notice3', 'detail', 'hint');
+select level, message, position from logging.get_log(false);
+select level, message, position from logging.get_log(272);
+select level, message, position from logging.get_log(false);
+select level, message, position from logging.get_log(544);
+select level, message, position from logging.get_log(false);
+select level, message, position from logging.get_log(1000);
+select level, message, position from logging.get_log(false);
+
 reset log_statement;
 drop extension pg_logging cascade;

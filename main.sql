@@ -46,13 +46,20 @@ create type log_item as (
 	vxid				text,						/* virtual transaction id */
 	txid				bigint,						/* transaction id */
 	query				text,
-	query_pos			int
+	query_pos			int,
+	position			int							/* position in logs buffer */
 );
 
 create or replace function get_log(
-	flush bool default true
+	flush			bool default true
 )
-returns log_item as 'MODULE_PATHNAME', 'get_logged_data'
+returns log_item as 'MODULE_PATHNAME', 'get_logged_data_flush'
+language c;
+
+create or replace function get_log(
+	from_position			int
+)
+returns log_item as 'MODULE_PATHNAME', 'get_logged_data_from'
 language c;
 
 create or replace function flush_log()

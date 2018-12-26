@@ -17,7 +17,8 @@
 
 #include "pg_logging.h"
 
-PG_FUNCTION_INFO_V1( get_logged_data );
+PG_FUNCTION_INFO_V1( get_logged_data_flush );
+PG_FUNCTION_INFO_V1( get_logged_data_from );
 PG_FUNCTION_INFO_V1( flush_logged_data );
 PG_FUNCTION_INFO_V1( test_ereport );
 PG_FUNCTION_INFO_V1( errlevel_in );
@@ -28,6 +29,9 @@ typedef struct {
 	uint32		until;
 	uint32		reading_pos;
 	bool		wraparound;
+	bool		flush;
+	int			from;
+	bool		found;
 } logged_data_ctx;
 
 static char *
@@ -62,14 +66,18 @@ flush_logged_data(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-Datum
-get_logged_data(PG_FUNCTION_ARGS)
+enum call_type
+{
+	ct_flush,
+	ct_from
+};
+
+static Datum
+get_logged_data(PG_FUNCTION_ARGS, enum call_type ctype)
 {
 	MemoryContext		old_mcxt;
 	FuncCallContext	   *funccxt;
 	logged_data_ctx	   *usercxt;
-
-	bool	flush = PG_GETARG_BOOL(0);
 
 	if (SRF_IS_FIRSTCALL())
 	{
@@ -79,16 +87,24 @@ get_logged_data(PG_FUNCTION_ARGS)
 
 		old_mcxt = MemoryContextSwitchTo(funccxt->multi_call_memory_ctx);
 
-		/*
-		 * Reader will block only other readers if it's fast enough.
-		 * Writer could take this lock if readpos wasn't changed.
-		 */
 		HDR_LOCK();
 		usercxt = (logged_data_ctx *) palloc(sizeof(logged_data_ctx));
 		usercxt->until = hdr->endpos;
 		usercxt->reading_pos = hdr->readpos;
 		usercxt->wraparound = hdr->wraparound;
-		hdr->wraparound = false;
+		usercxt->flush = false;
+		usercxt->from = -1;
+
+		switch (ctype)
+		{
+			case ct_flush:
+				usercxt->flush = PG_GETARG_BOOL(0);
+				break;
+			case ct_from:
+				usercxt->from = PG_GETARG_INT32(0);
+				break;
+		}
+		usercxt->found = false;
 
 		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 			elog(ERROR, "return type must be a row type");
@@ -112,6 +128,8 @@ get_logged_data(PG_FUNCTION_ARGS)
 		HeapTuple		htup;
 		Datum			values[Natts_pg_logging_data];
 		bool			isnull[Natts_pg_logging_data];
+		bool			skip = false;
+		int				curpos;
 
 		if (usercxt->reading_pos + ITEM_HDR_LEN > hdr->buffer_size)
 		{
@@ -120,7 +138,23 @@ get_logged_data(PG_FUNCTION_ARGS)
 			continue;
 		}
 
+		if (usercxt->from > 0)
+		{
+			if (usercxt->reading_pos != usercxt->from)
+				skip = true;
+			else
+			{
+				usercxt->found = true;
+				usercxt->from = -1;
+
+				/* next time this position will be first */
+				hdr->readpos = usercxt->reading_pos;
+				hdr->wraparound = usercxt->wraparound;
+			}
+		}
+
 		data = (char *) (hdr->data + usercxt->reading_pos);
+		curpos = usercxt->reading_pos;
 		AssertPointerAlignment(data, 4);
 
 		/*
@@ -129,6 +163,25 @@ get_logged_data(PG_FUNCTION_ARGS)
 		 */
 		item = (CollectedItem *) data;
 		Assert(item->totallen < hdr->buffer_size);
+
+		/* Make calculations like below but without copying */
+		if (skip)
+		{
+			if (usercxt->reading_pos + item->totallen >= hdr->buffer_size)
+			{
+				/* two parts */
+				usercxt->wraparound = false;
+				usercxt->reading_pos += item->totallen;
+				usercxt->reading_pos = usercxt->reading_pos - hdr->buffer_size;
+			}
+			else
+			{
+				/* one part */
+				usercxt->reading_pos += item->totallen;
+			}
+
+			continue;
+		}
 
 		item = (CollectedItem *) palloc0(item->totallen);
 		memcpy(item, data, offsetof(CollectedItem, data));
@@ -169,6 +222,7 @@ get_logged_data(PG_FUNCTION_ARGS)
 		values[Anum_pg_logging_line_num - 1] = Int64GetDatum(item->log_line_number);
 		values[Anum_pg_logging_internalpos - 1] = Int32GetDatum(item->internalpos);
 		values[Anum_pg_logging_query_pos - 1] = Int32GetDatum(item->query_pos);
+		values[Anum_pg_logging_position - 1] = Int32GetDatum(curpos);
 
 		if (TransactionIdIsValid(item->txid))
 			values[Anum_pg_logging_txid - 1] = TransactionIdGetDatum(item->txid);
@@ -214,11 +268,29 @@ do {															\
 		SRF_RETURN_NEXT(funccxt, HeapTupleGetDatum(htup));
 	}
 
-	if (flush)
+	if (ctype == ct_from && !usercxt->found)
+		elog(NOTICE, "nothing with specified position was found");
+
+	if (usercxt->flush)
+	{
 		hdr->readpos = usercxt->reading_pos;
+		hdr->wraparound = false;
+	}
 
 	HDR_RELEASE();
 	SRF_RETURN_DONE(funccxt);
+}
+
+Datum
+get_logged_data_flush(PG_FUNCTION_ARGS)
+{
+	return get_logged_data(fcinfo, ct_flush);
+}
+
+Datum
+get_logged_data_from(PG_FUNCTION_ARGS)
+{
+	return get_logged_data(fcinfo, ct_from);
 }
 
 Datum

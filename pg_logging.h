@@ -84,6 +84,7 @@ typedef struct LoggingShmemHdr
 	bool				logging_enabled;
 	bool				ignore_statements;
 	bool				set_query_fields;
+	int					minlevel;
 } LoggingShmemHdr;
 
 #define HDR_LOCK() 	( LWLockAcquire(&hdr->hdr_lock.lock, LW_EXCLUSIVE) )
@@ -125,6 +126,7 @@ enum {
 	Anum_pg_logging_txid,
 	Anum_pg_logging_query,
 	Anum_pg_logging_query_pos,
+	Anum_pg_logging_position,
 
 	Natts_pg_logging_data
 };

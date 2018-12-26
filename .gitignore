@@ -7,3 +7,4 @@ regression.diffs
 regression.out
 *.plist
 Dockerfile
+pg_logging--0.2.sql

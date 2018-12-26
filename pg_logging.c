@@ -67,6 +67,24 @@ buffer_size_assign_hook(int newval, void *extra)
 	reset_counters_in_shmem(newval);
 }
 
+static const struct config_enum_entry level_options[] = {
+	{"none", 0, true},
+	{"debug", DEBUG2, true},
+	{"debug5", DEBUG5, false},
+	{"debug4", DEBUG4, false},
+	{"debug3", DEBUG3, false},
+	{"debug2", DEBUG2, false},
+	{"debug1", DEBUG1, false},
+	{"log", LOG, false},
+	{"info", INFO, true},
+	{"notice", NOTICE, false},
+	{"warning", WARNING, false},
+	{"error", ERROR, false},
+	{"fatal", FATAL, false},
+	{"panic", PANIC, false},
+	{NULL, 0, false}
+};
+
 static void
 setup_gucs(bool basic)
 {
@@ -92,8 +110,7 @@ setup_gucs(bool basic)
 			&hdr->logging_enabled,
 			true,
 			PGC_SUSET,
-			0,
-			NULL, NULL, NULL
+			0, NULL, NULL, NULL
 		);
 
 		DefineCustomBoolVariable(
@@ -102,8 +119,7 @@ setup_gucs(bool basic)
 			&hdr->ignore_statements,
 			false,
 			PGC_SUSET,
-			0,
-			NULL, NULL, NULL
+			0, NULL, NULL, NULL
 		);
 
 		DefineCustomBoolVariable(
@@ -112,8 +128,18 @@ setup_gucs(bool basic)
 			&hdr->set_query_fields,
 			true,
 			PGC_SUSET,
+			0, NULL, NULL, NULL
+		);
+
+		DefineCustomEnumVariable(
+			"pg_logging.minlevel",
+			"Set minimal log level to catch",
+			NULL,
+			&hdr->minlevel,
 			0,
-			NULL, NULL, NULL
+			level_options,
+			PGC_SUSET,
+			0, NULL, NULL, NULL
 		);
 	}
 }
@@ -229,6 +255,9 @@ copy_error_data_to_shmem(ErrorData *edata)
 		return;
 
 	if (hdr->ignore_statements && edata->hide_stmt)
+		return;
+
+	if (hdr->minlevel && edata->elevel < hdr->minlevel)
 		return;
 
 	log_in_process = true;
