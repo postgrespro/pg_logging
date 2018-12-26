@@ -22,11 +22,11 @@ Available functions
 --------------------
 
     get_log(
-        flush				bool default true
+        flush               bool default true
     )
 
     get_log(
-		from_position		int
+        from_position       int
     )
 
 This function is used to fetch the logged information. The information is
@@ -75,7 +75,7 @@ accordingly moved on each rewrite it could slower down the database.
         txid                bigint,                     /* transaction id */
         query               text,
         query_pos           int,
-		position			int
+        position            int
     );
 
 `error_level` type
