@@ -10,7 +10,14 @@ PGFILEDESC = "PostgreSQL logging interface"
 DATA = $(EXTENSION)--0.1--0.2.sql
 DATA_built = $(EXTENSION)--$(EXTVERSION).sql
 
+VNUM := $(shell $(PG_CONFIG) --version | awk '{print $$2}')
+
+# check for declarative syntax
+ifeq ($(VNUM),$(filter 9.6%,$(VNUM)))
+REGRESS = basic96
+else
 REGRESS = basic
+endif
 EXTRA_REGRESS_OPTS=--temp-config=$(CURDIR)/conf.add
 
 ifndef PG_CONFIG

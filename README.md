@@ -22,13 +22,25 @@ Available functions
 --------------------
 
     get_log(
-        flush               true
+        flush				bool default true
+    )
+
+    get_log(
+		from_position		int
     )
 
 This function is used to fetch the logged information. The information is
 similar to the data that postgres writes to log files.
 
-`flush` means that fetched data will not be returned on next query calls.
+`flush` means that fetched data will not be returned on next query calls. By
+default it's true.
+
+`from_position` is used as fail-safe case, when a client specifies until
+which position it already has data. This position should be equal to
+`position` field from `log_item`. If there was wraparound there is a chance
+that the position will be invalid and query will raise an error. In this case
+the client should use `get_log(flush bool)` function (and possibly increase
+the ring buffer size).
 
 Logs are stored in the ring buffer which means that non fetched data will
 be rewritten in the buffer wraparounds. Since reading position should be
@@ -62,7 +74,8 @@ accordingly moved on each rewrite it could slower down the database.
         vxid                text,                       /* virtual transaction id */
         txid                bigint,                     /* transaction id */
         query               text,
-        query_pos           int
+        query_pos           int,
+		position			int
     );
 
 `error_level` type

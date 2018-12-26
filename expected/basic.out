@@ -127,17 +127,13 @@ select level, message, position from logging.get_log(false);
 (1 row)
 
 select level, message, position from logging.get_log(1000);
-NOTICE:  nothing with specified position was found
- level | message | position 
--------+---------+----------
-       |         |         
-(1 row)
-
+ERROR:  nothing with specified position was found
 select level, message, position from logging.get_log(false);
- level | message | position 
--------+---------+----------
-    20 | notice3 |      544
-(1 row)
+ level |                  message                  | position 
+-------+-------------------------------------------+----------
+    20 | notice3                                   |      544
+    20 | nothing with specified position was found |      816
+(2 rows)
 
 reset log_statement;
 drop extension pg_logging cascade;

@@ -269,7 +269,10 @@ do {															\
 	}
 
 	if (ctype == ct_from && !usercxt->found)
-		elog(NOTICE, "nothing with specified position was found");
+	{
+		HDR_RELEASE();
+		elog(ERROR, "nothing with specified position was found");
+	}
 
 	if (usercxt->flush)
 	{
